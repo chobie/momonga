@@ -71,6 +71,19 @@ func NewClient(opt Option) *Client {
 		},
 		Errors: make(chan error, 128),
 	}
+	client.InflightTable.SetOnFinish(func(id uint16, message codec.Message, opaque interface{}) {
+		if m, ok := message.(*codec.PublishMessage); ok {
+			if m.QosLevel == 1 {
+				if b, ok := opaque.(chan bool); ok {
+					close(b)
+				}
+			} else if m.QosLevel == 2 {
+				if b, ok := opaque.(chan bool); ok {
+					close(b)
+				}
+			}
+		}
+	})
 
 	if len(opt.Magic) < 1 {
 		opt.Magic = client.Option.Magic
@@ -273,7 +286,8 @@ func (self *Client) Loop() {
 					}(self.Closed)
 					break
 				case codec.MESSAGE_TYPE_PUBACK:
-					//p := c.(*codec.PubackMessage)
+					p := c.(*codec.PubackMessage)
+					self.InflightTable.Unref(p.Identifier)
 					break
 				case codec.MESSAGE_TYPE_PUBREC:
 					p := c.(*codec.PubrecMessage)
@@ -288,12 +302,12 @@ func (self *Client) Loop() {
 					ack.Identifier = p.Identifier
 					self.Queue <- ack
 
-					self.InflightTable.Remove(ack.Identifier) // Unackknowleged
+					self.InflightTable.Unref(ack.Identifier) // Unackknowleged
 					break
 				case codec.MESSAGE_TYPE_PUBCOMP:
 					// PUBCOMPを受けるということはSenderとして受けるということ。
 					p := c.(*codec.PubcompMessage)
-					self.InflightTable.Remove(p.Identifier)
+					self.InflightTable.Unref(p.Identifier)
 					break
 				case codec.MESSAGE_TYPE_PINGRESP:
 					break
@@ -366,19 +380,27 @@ func (self *Client) Loop() {
 }
 
 func (self *Client) Publish(TopicName string, Payload []byte, QoSLevel int) {
-	self.publishCommon(TopicName, Payload, QoSLevel, false)
+	self.publishCommon(TopicName, Payload, QoSLevel, false, nil)
 }
 
 // ってあるとつかいやすい？Loop動かしてないと全部うごかねぇんだよなぁ。
-func (self *Client) PublishWait(TopicName string, Payload []byte, QoSLevel int) {
-	//self.publishCommon(TopicName, Payload, QoSLevel, false)
+func (self *Client) PublishWait(TopicName string, Payload []byte, QoSLevel int) error {
+	if QoSLevel == 0 {
+		return errors.New("QoS should be greater than 0.")
+	}
+
+	b := make(chan bool, 1)
+	self.publishCommon(TopicName, Payload, QoSLevel, false, b)
+	<- b
+
+	return nil
 }
 
 func (self *Client) PublishWithRetain(TopicName string, Payload []byte, QoSLevel int) {
-	self.publishCommon(TopicName, Payload, QoSLevel, true)
+	self.publishCommon(TopicName, Payload, QoSLevel, true, nil)
 }
 
-func (self *Client) publishCommon(TopicName string, Payload []byte, QosLevel int, retain bool) {
+func (self *Client) publishCommon(TopicName string, Payload []byte, QosLevel int, retain bool, opaque interface{}) {
 	sb := codec.NewPublishMessage()
 	sb.TopicName = TopicName
 	sb.Payload = Payload
@@ -391,7 +413,7 @@ func (self *Client) publishCommon(TopicName string, Payload []byte, QosLevel int
 	if QosLevel > 0 {
 		id := self.InflightTable.NewId()
 		sb.Identifier = id
-		self.InflightTable.Register(id, sb, nil)
+		self.InflightTable.Register(id, sb, opaque)
 	}
 
 	self.Queue <- sb

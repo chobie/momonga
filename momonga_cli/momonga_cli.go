@@ -45,6 +45,7 @@ func publish(ctx *cli.Context) {
 	c.Connect()
 	//retain := c.Bool("r")
 	go c.Loop()
+
 	if ctx.Bool("s") {
 		// Read from Stdin
 		scanner := bufio.NewScanner(os.Stdin)
@@ -53,8 +54,7 @@ func publish(ctx *cli.Context) {
 		}
 	} else {
 		payload := ctx.String("m")
-		c.Publish(topic, []byte(payload), qos)
-		select{}
+		c.PublishWait(topic, []byte(payload), qos)
 	}
 }
 

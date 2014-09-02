@@ -5,7 +5,7 @@ import (
 	"github.com/chobie/momonga/encoding/mqtt"
 )
 
-// Topicは一種のQueueっちゅーこと。TopicにQueue持たせるべき
+// Topicは一種のQueueっちゅーこと。TopicにQueue持たせるべき?subscribeでWildcardできるからちょっと違うんだよなぁ
 type Topic struct {
 	Level int
 	Name string
