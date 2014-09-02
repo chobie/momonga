@@ -210,14 +210,13 @@ func (self *Client) Subscribe(topic string, QoS int) error {
 	return nil
 }
 
+// TODO: あんまり明示的に出したくないなー、と思いつつ
 func (self *Client) Loop() {
 	go func() {
 		for {
 			select {
 			// Write Queue
 			case msg := <-self.Queue:
-				// TODO: PublishでQos > 0の場合Retryできるように
-				// というか、まずは保存、そっから配る
 				b2, _ := codec.Encode(msg)
 
 				if self.IsAlived() {
@@ -228,10 +227,12 @@ func (self *Client) Loop() {
 						}
 					})
 				} else {
+					self.Mutex.Lock()
 					self.OfflineQueue = append(self.OfflineQueue, msg)
 					if len(self.OfflineQueue) > self.MaxOfflineQueue {
 						self.OfflineQueue = self.OfflineQueue[len(self.OfflineQueue)-self.MaxOfflineQueue:]
 					}
+					self.Mutex.Unlock()
 				}
 				break
 			}
@@ -250,6 +251,9 @@ func (self *Client) Loop() {
 				// TODO: ここらへんごりごり書きたくない
 				switch c.GetType() {
 				case codec.MESSAGE_TYPE_PUBLISH:
+					// TODO: PublishでQos > 0の場合Retryできるように
+					// まずは保存、そっから配るようにする
+
 					p := c.(*codec.PublishMessage)
 					if self.PublishCallback != nil {
 						self.PublishCallback(p.TopicName, p.Payload)
@@ -266,6 +270,7 @@ func (self *Client) Loop() {
 						self.Queue <- ack
 					}
 					break
+
 				case codec.MESSAGE_TYPE_CONNACK:
 					r := c.(*codec.ConnackMessage)
 					if r.ReturnCode != 0 {
@@ -273,16 +278,19 @@ func (self *Client) Loop() {
 						continue
 					}
 					break
+
 				case codec.MESSAGE_TYPE_PUBACK:
 					p := c.(*codec.PubackMessage)
 					self.InflightTable.Unref(p.Identifier)
 					break
+
 				case codec.MESSAGE_TYPE_PUBREC:
 					p := c.(*codec.PubrecMessage)
 					ack := codec.NewPubrelMessage()
 					ack.Identifier = p.Identifier
 					self.Queue <- ack
 					break
+
 				case codec.MESSAGE_TYPE_PUBREL:
 					// PUBRELを受けるということはReceiverとして受けるということ
 					p := c.(*codec.PubrelMessage)
@@ -292,18 +300,23 @@ func (self *Client) Loop() {
 
 					self.InflightTable.Unref(ack.Identifier) // Unackknowleged
 					break
+
 				case codec.MESSAGE_TYPE_PUBCOMP:
 					// PUBCOMPを受けるということはSenderとして受けるということ。
 					p := c.(*codec.PubcompMessage)
 					self.InflightTable.Unref(p.Identifier)
 					break
+
 				case codec.MESSAGE_TYPE_PINGRESP:
+					// TODO: Pingの内部カウント下げる
 					break
+
 				case codec.MESSAGE_TYPE_SUBACK:
 					p := c.(*codec.SubackMessage)
 					self.InflightTable.Remove(p.Identifier)
 
 					break
+
 				case codec.MESSAGE_TYPE_UNSUBACK:
 					p := c.(*codec.UnsubackMessage)
 					mm, err := self.InflightTable.Get(p.Identifier)
@@ -316,9 +329,11 @@ func (self *Client) Loop() {
 					}
 					self.InflightTable.Remove(p.Identifier)
 					break
+
 				default:
 					self.Errors <- fmt.Errorf("Unhandled message: %d", c.GetType())
 				}
+
 			case <-self.Closed:
 				// Memo: まえは何かしたかったんだよ
 				break
