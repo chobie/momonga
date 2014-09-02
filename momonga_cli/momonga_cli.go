@@ -8,12 +8,21 @@ import (
 	"net"
 	"os"
 	"bufio"
+	"code.google.com/p/go.net/websocket"
 )
 
 func publish(ctx *cli.Context) {
 	opt := client.Option{
 		TransporterCallback: func() (io.ReadWriteCloser, error) {
-			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ctx.String("host"), ctx.Int("port")))
+			var conn io.ReadWriteCloser
+			var err error
+
+			if ctx.Bool("websocket") {
+				origin := ctx.String("origin")
+				conn, err = websocket.Dial(ctx.String("url"), "", origin)
+			} else {
+				conn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", ctx.String("host"), ctx.Int("port")))
+			}
 			return conn, err
 		},
 		Magic:   []byte("MQIsdp"),
@@ -119,6 +128,9 @@ func main() {
 		cli.BoolFlag{"r", "message should be retained.", ""},
 		cli.BoolFlag{"d", "enable debug messages", ""},
 		cli.BoolFlag{"insecure", "do not check that the server certificate", ""},
+//		cli.BoolFlag{"websocket", "use websocket", ""},
+		cli.StringFlag{"origin", "", "websocket origin", ""},
+		cli.StringFlag{"url", "", "websocket url (ws://localhost:8888/mqtt)", ""},
 	}
 
 	subFlags := commonFlags
