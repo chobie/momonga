@@ -39,7 +39,7 @@ type Client struct {
 	ClearSession     bool
 	OfflineQueue     []codec.Message
 	MaxOfflineQueue  int
-	Mutex            sync.Mutex
+	Mutex            sync.RWMutex
 	Balancer         *util.Balancer
 	Errors           chan error
 }
@@ -49,7 +49,8 @@ func NewClient(opt Option) *Client {
 		Option: Option{
 			Magic:      []byte("MQTT"),
 			Version:    4,
-			Identifier: "mqtt-chobie",
+			// Memo: User have to set Identifier themselves
+			Identifier: "momonga-mqtt",
 			Keepalive:  10,
 			TickerCallback: func(timer time.Time, c *Client) error {
 				c.Ping()
@@ -64,13 +65,14 @@ func NewClient(opt Option) *Client {
 		ClearSession:     true,
 		OfflineQueue:     make([]codec.Message, 0),
 		MaxOfflineQueue: 1000,
-		Mutex:            sync.Mutex{},
+		Mutex:            sync.RWMutex{},
 		Balancer: &util.Balancer{
-			// Writeは10req/secぐらいにおさえようず
+			// Writeは10req/secぐらいにおさえようず。クソ実装対策
 			PerSec: 10,
 		},
 		Errors: make(chan error, 128),
 	}
+
 	client.InflightTable.SetOnFinish(func(id uint16, message codec.Message, opaque interface{}) {
 		if m, ok := message.(*codec.PublishMessage); ok {
 			if m.QosLevel == 1 {
@@ -95,7 +97,7 @@ func NewClient(opt Option) *Client {
 		opt.Identifier = client.Option.Identifier
 	}
 
-	// TODO: TickerはPrivateにしておきたいかな
+	// TODO: Tickerやめる
 	// 最後の行動からKeepalive秒たったときにFireするからTickerではない。
 	if opt.Keepalive > 0 {
 		opt.Ticker = time.NewTicker((time.Duration)(opt.Keepalive) * time.Second)
@@ -103,6 +105,7 @@ func NewClient(opt Option) *Client {
 			opt.TickerCallback = client.Option.TickerCallback
 		}
 	}
+
 	client.Option = opt
 	return client
 }
@@ -158,11 +161,9 @@ func (self *Client) Connect() error {
 
 	b, _ := codec.Encode(msg)
 	self.connection.Write(b)
-	self.Mutex.Lock()
-	self.Connected = true
-	self.Mutex.Unlock()
+	self.setConnected(true)
 
-	// TODO: (´・ω・｀)
+	// TODO: このアホっぽい実装はあとでちゃんとなおす
 	if len(self.OfflineQueue) > 0 {
 		self.Mutex.Lock()
 		var targets []codec.Message
@@ -181,10 +182,7 @@ func (self *Client) Connect() error {
 }
 
 func (self *Client) Ping() {
-	self.Mutex.Lock()
-	connected := self.Connected
-	self.Mutex.Unlock()
-	if !connected {
+	if !self.IsAlived() {
 		return
 	}
 
@@ -218,11 +216,7 @@ func (self *Client) Loop() {
 				// というか、まずは保存、そっから配る
 				b2, _ := codec.Encode(msg)
 
-				self.Mutex.Lock()
-				connected := self.Connected
-				self.Mutex.Unlock()
-
-				if connected {
+				if self.IsAlived() {
 					self.Balancer.Execute(func() {
 						_, err := self.connection.Write(b2)
 						if err != nil {
@@ -242,9 +236,10 @@ func (self *Client) Loop() {
 
 	go func() {
 		for {
-			// Read Queue
+			// Read Queueっつーか受け取ったMessageをどうするかって
 			select {
 			case c := <-self.ReadQueue:
+				// TODO: ここらへんごりごり書きたくない
 				switch c.GetType() {
 				case codec.MESSAGE_TYPE_PUBLISH:
 					p := c.(*codec.PublishMessage)
@@ -353,7 +348,7 @@ func (self *Client) Loop() {
 
 			self.ReadQueue <- c
 		} else {
-			// Exponential backoff
+			// TODO: implement exponential backoff
 			time.Sleep(time.Duration(3) * time.Second)
 			err := self.Connect()
 
@@ -361,14 +356,13 @@ func (self *Client) Loop() {
 				self.Errors <- err
 			} else {
 				for t, qos := range self.SubscribeHistory {
-					// TODO: QoSをちゃんと指定する
 					self.Subscribe(t, qos)
 				}
 			}
 		}
 	}
 
-	// エラーをたんたんと流してくれる人
+	// エラーをたんたんと流してくれる人。どーゆーinterfaceにしよっかなー
 	go func() {
 		for {
 			select {
@@ -383,7 +377,6 @@ func (self *Client) Publish(TopicName string, Payload []byte, QoSLevel int) {
 	self.publishCommon(TopicName, Payload, QoSLevel, false, nil)
 }
 
-// ってあるとつかいやすい？Loop動かしてないと全部うごかねぇんだよなぁ。
 func (self *Client) PublishWait(TopicName string, Payload []byte, QoSLevel int) error {
 	if QoSLevel == 0 {
 		return errors.New("QoS should be greater than 0.")
@@ -423,7 +416,7 @@ func (self *Client) SetPublishCallback(callback func(string, []byte)) {
 	self.PublishCallback = callback
 }
 
-func (self *Client) Unsubscribe(topic string) error {
+func (self *Client) Unsubscribe(topic string) {
 	sb := codec.NewUnsubscribeMessage()
 	sb.Payload = append(sb.Payload, codec.SubscribePayload{TopicFilter: topic})
 	id := self.InflightTable.NewId()
@@ -431,7 +424,26 @@ func (self *Client) Unsubscribe(topic string) error {
 	self.InflightTable.Register(id, sb, nil)
 
 	self.Queue <- sb
-	return nil
+
+	return
+}
+
+func (self *Client) setConnected(bval bool) {
+	self.Mutex.Lock()
+	self.Connected = bval
+	self.Mutex.Unlock()
+}
+
+func (self *Client) IsAlived() bool {
+	self.Mutex.RLock()
+	connected := self.Connected
+	self.Mutex.RUnlock()
+
+	return connected
+}
+
+func (self *Client) SetRequestPerSecondLimit(limit int) {
+	self.Balancer.PerSec = limit
 }
 
 func (self *Client) Disconnect() {
@@ -447,9 +459,7 @@ func (self *Client) Close() {
 
 func (self *Client) ForceClose() {
 	// Disconnectを送らずに死ぬ
-	self.Mutex.Lock()
-	self.Connected = false
-	self.Mutex.Unlock()
+	self.setConnected(false)
 
 	self.connection.Close()
 	self.Closed <- true
