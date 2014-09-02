@@ -25,6 +25,7 @@ func publish(ctx *cli.Context) {
 			}
 			return conn, err
 		},
+		Keepalive: 10,
 		Magic:   []byte("MQIsdp"),
 		Version: 3,
 	}
@@ -64,6 +65,7 @@ func subscribe(ctx *cli.Context) {
 			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ctx.String("host"), ctx.Int("port")))
 			return conn, err
 		},
+		Keepalive: 10,
 		Magic:   []byte("MQIsdp"),
 		Version: 3,
 	}

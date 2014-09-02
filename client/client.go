@@ -23,7 +23,7 @@ type Option struct {
 	WillQos             int
 	UserName            string
 	Password            string
-	Keepalive           int
+	Keepalive           int // これ面倒くさいな
 }
 
 type Client struct {
@@ -34,7 +34,7 @@ type Client struct {
 	SubscribeHistory map[string]int
 	Connected        bool
 	Queue            chan codec.Message
-	ReadQueue        chan codec.Message
+	ProcessQueue        chan codec.Message
 	InflightTable    *util.MessageTable
 	ClearSession     bool
 	OfflineQueue     []codec.Message
@@ -42,6 +42,7 @@ type Client struct {
 	Mutex            sync.RWMutex
 	Balancer         *util.Balancer
 	Errors           chan error
+	Kicker           *time.Timer
 }
 
 func NewClient(opt Option) *Client {
@@ -60,7 +61,7 @@ func NewClient(opt Option) *Client {
 		Closed:           make(chan bool, 1),
 		SubscribeHistory: make(map[string]int),
 		Queue:            make(chan codec.Message, 8192),
-		ReadQueue:        make(chan codec.Message, 8192),
+		ProcessQueue:        make(chan codec.Message, 8192),
 		InflightTable:    util.NewMessageTable(),
 		ClearSession:     true,
 		OfflineQueue:     make([]codec.Message, 0),
@@ -97,17 +98,20 @@ func NewClient(opt Option) *Client {
 		opt.Identifier = client.Option.Identifier
 	}
 
-	// TODO: Tickerやめる
-	// 最後の行動からKeepalive秒たったときにFireするからTickerではない。
-	if opt.Keepalive > 0 {
-		opt.Ticker = time.NewTicker((time.Duration)(opt.Keepalive) * time.Second)
-		if opt.TickerCallback == nil {
-			opt.TickerCallback = client.Option.TickerCallback
-		}
-	}
-
 	client.Option = opt
 	return client
+}
+
+func (self *Client) setupKicker() {
+	if self.Kicker != nil {
+		self.Kicker.Stop()
+	}
+
+	self.Kicker = time.AfterFunc(time.Second * time.Duration(self.Option.Keepalive), func() {
+			fmt.Printf("_")
+			self.Ping()
+			self.Kicker.Reset(time.Second * time.Duration(self.Option.Keepalive))
+	})
 }
 
 func (self *Client) EnableClearSession() {
@@ -231,6 +235,10 @@ func (self *Client) Loop() {
 				}
 				break
 			}
+
+			if self.Kicker != nil {
+				self.Kicker.Reset(time.Second * time.Duration(self.Option.Keepalive))
+			}
 		}
 	}()
 
@@ -238,7 +246,7 @@ func (self *Client) Loop() {
 		for {
 			// Read Queueっつーか受け取ったMessageをどうするかって
 			select {
-			case c := <-self.ReadQueue:
+			case c := <-self.ProcessQueue:
 				// TODO: ここらへんごりごり書きたくない
 				switch c.GetType() {
 				case codec.MESSAGE_TYPE_PUBLISH:
@@ -262,23 +270,8 @@ func (self *Client) Loop() {
 					r := c.(*codec.ConnackMessage)
 					if r.ReturnCode != 0 {
 						self.Errors <- errors.New("Connection aborted")
-						return
+						continue
 					}
-
-					// TODO: これここでやるべきかなぁ。やるべきじゃないよねー
-					go func(closed chan bool) {
-						select {
-						case <-closed:
-							fmt.Printf("damepo2")
-							return
-						default:
-							if self.Option.Ticker != nil {
-								for t := range self.Option.Ticker.C {
-									self.Option.TickerCallback(t, self)
-								}
-							}
-						}
-					}(self.Closed)
 					break
 				case codec.MESSAGE_TYPE_PUBACK:
 					p := c.(*codec.PubackMessage)
@@ -330,6 +323,10 @@ func (self *Client) Loop() {
 				// Memo: まえは何かしたかったんだよ
 				break
 			}
+
+			if self.Kicker != nil {
+				self.Kicker.Reset(time.Second * time.Duration(self.Option.Keepalive))
+			}
 		}
 	}()
 
@@ -346,7 +343,7 @@ func (self *Client) Loop() {
 				}
 			}
 
-			self.ReadQueue <- c
+			self.ProcessQueue <- c
 		} else {
 			// TODO: implement exponential backoff
 			time.Sleep(time.Duration(3) * time.Second)
@@ -431,6 +428,16 @@ func (self *Client) Unsubscribe(topic string) {
 func (self *Client) setConnected(bval bool) {
 	self.Mutex.Lock()
 	self.Connected = bval
+
+	if !self.Connected {
+		if self.Option.Keepalive > 0 {
+			self.Kicker.Stop()
+		}
+	} else {
+		if self.Option.Keepalive > 0 {
+			self.setupKicker()
+		}
+	}
 	self.Mutex.Unlock()
 }
 
