@@ -58,6 +58,13 @@ go get -u code.google.com/p/log4go
 go get -u code.google.com/p/go.net/websocket
 go get -u github.com/BurntSushi/toml
 go get -u github.com/chobie/momonga
+
+# cli
+go build -o momonga_cli src/github.com/chobie/momonga/momonga_cli/momonga_cli.go
+
+# server
+go build -o moomngad src/github.com/chobie/momonga/momongad/momongad.go
+
 ```
 
 # Author
