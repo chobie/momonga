@@ -128,7 +128,6 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 		self.Will = will
 	}
 
-	fmt.Printf("Flag: %d\n", self.Flag)
 	if int(self.Flag) & 0x80 > 0 {
 		binary.Read(reader, binary.BigEndian, &Length)
 		vv := &bytes.Buffer{}
