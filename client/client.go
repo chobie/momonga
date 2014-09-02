@@ -257,7 +257,7 @@ func (self *Client) Loop() {
 						return
 					}
 
-					// TODO: これここでやるべきかなぁ
+					// TODO: これここでやるべきかなぁ。やるべきじゃないよねー
 					go func(closed chan bool) {
 						select {
 						case <-closed:
@@ -369,8 +369,8 @@ func (self *Client) Publish(TopicName string, Payload []byte, QoSLevel int) {
 	self.publishCommon(TopicName, Payload, QoSLevel, false)
 }
 
+// ってあるとつかいやすい？Loop動かしてないと全部うごかねぇんだよなぁ。
 func (self *Client) PublishWait(TopicName string, Payload []byte, QoSLevel int) {
-	// ってあるとつかいやすい？
 	//self.publishCommon(TopicName, Payload, QoSLevel, false)
 }
 
