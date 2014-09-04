@@ -13,7 +13,7 @@ type ConnectMessage struct {
 	Version      uint8
 	Flag         uint8
 	KeepAlive    uint16
-	Identifier   string
+	PacketIdentifier   string
 	Will         *WillMessage
 	CleanSession bool
 	UserName     string
@@ -27,10 +27,23 @@ func (self *ConnectMessage) encode() ([]byte, int, error) {
 	buffer := bytes.NewBuffer(nil)
 	err := binary.Write(buffer, binary.BigEndian, headerLength)
 	if err != nil {
-		fmt.Printf("Error: %s\n", err)
+		fmt.Printf("1Error: %s\n", err)
 	}
 	buffer.Write(self.Magic)
 	size += 2 + len(self.Magic)
+
+	if self.CleanSession {
+		self.Flag |= 0x02
+	}
+	if self.Will != nil {
+		self.Flag |= 0x04
+	}
+	if len(self.UserName) > 0 {
+		self.Flag |= 0x80
+	}
+	if len(self.Password) > 0 {
+		self.Flag |= 0x40
+	}
 
 	binary.Write(buffer, binary.BigEndian, self.Version)
 	binary.Write(buffer, binary.BigEndian, self.Flag)
@@ -38,12 +51,12 @@ func (self *ConnectMessage) encode() ([]byte, int, error) {
 	size += 1 + 1 + 2
 
 	var Length uint16 = 0
-	if self.Identifier != "" {
-		Length = uint16(len(self.Identifier))
+	if self.PacketIdentifier != "" {
+		Length = uint16(len(self.PacketIdentifier))
 	}
 	binary.Write(buffer, binary.BigEndian, Length)
 	if Length > 0 {
-		buffer.Write([]byte(self.Identifier))
+		buffer.Write([]byte(self.PacketIdentifier))
 	}
 	size += 2 + int(Length)
 
@@ -87,32 +100,32 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 	binary.Read(reader, binary.BigEndian, &self.Flag)
 	binary.Read(reader, binary.BigEndian, &self.KeepAlive)
 
-	// order Client Identifier, Will Topic, Will Message, User Name, Password
-	var IdentifierLength uint16
-	binary.Read(reader, binary.BigEndian, &IdentifierLength)
-	if IdentifierLength > 0 {
+	// order Client PacketIdentifier, Will Topic, Will Message, User Name, Password
+	var PacketIdentifierLength uint16
+	binary.Read(reader, binary.BigEndian, &PacketIdentifierLength)
+	if PacketIdentifierLength > 0 {
 		vv := &bytes.Buffer{}
-		_, err := io.CopyN(vv, reader, int64(IdentifierLength))
+		_, err := io.CopyN(vv, reader, int64(PacketIdentifierLength))
 		if err != nil {
 			fmt.Printf("DAM ERROR")
 		}
-		self.Identifier = string(vv.Bytes())
+		self.PacketIdentifier = string(vv.Bytes())
 	}
 
 	if int(self.Flag) & 0x04 > 0 {
 		will := &WillMessage{}
 
-		binary.Read(reader, binary.BigEndian, &IdentifierLength)
+		binary.Read(reader, binary.BigEndian, &PacketIdentifierLength)
 		vv := &bytes.Buffer{}
-		_, err := io.CopyN(vv, reader, int64(IdentifierLength))
+		_, err := io.CopyN(vv, reader, int64(PacketIdentifierLength))
 		if err != nil {
 			fmt.Printf("DAM ERROR")
 		}
 		will.Topic = string(vv.Bytes())
 
-		binary.Read(reader, binary.BigEndian, &IdentifierLength)
+		binary.Read(reader, binary.BigEndian, &PacketIdentifierLength)
 		v2 := &bytes.Buffer{}
-		_, err = io.CopyN(v2, reader, int64(IdentifierLength))
+		_, err = io.CopyN(v2, reader, int64(PacketIdentifierLength))
 		if err != nil {
 			fmt.Printf("DAM ERROR")
 		}

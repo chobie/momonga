@@ -1,24 +1,24 @@
 package mqtt
 
-type MessageType int
+type PacketType int
 
 const (
-	MESSAGE_TYPE_RESERVED1   MessageType = 0
-	MESSAGE_TYPE_CONNECT     MessageType = 1
-	MESSAGE_TYPE_CONNACK     MessageType = 2
-	MESSAGE_TYPE_PUBLISH     MessageType = 3
-	MESSAGE_TYPE_PUBACK      MessageType = 4
-	MESSAGE_TYPE_PUBREC      MessageType = 5
-	MESSAGE_TYPE_PUBREL      MessageType = 6
-	MESSAGE_TYPE_PUBCOMP     MessageType = 7
-	MESSAGE_TYPE_SUBSCRIBE   MessageType = 8
-	MESSAGE_TYPE_SUBACK      MessageType = 9
-	MESSAGE_TYPE_UNSUBSCRIBE MessageType = 10
-	MESSAGE_TYPE_UNSUBACK    MessageType = 11
-	MESSAGE_TYPE_PINGREQ     MessageType = 12
-	MESSAGE_TYPE_PINGRESP    MessageType = 13
-	MESSAGE_TYPE_DISCONNECT  MessageType = 14
-	MESSAGE_TYPE_RESERVED2   MessageType = 15
+	PACKET_TYPE_RESERVED1   PacketType = 0
+	PACKET_TYPE_CONNECT     PacketType = 1
+	PACKET_TYPE_CONNACK     PacketType = 2
+	PACKET_TYPE_PUBLISH     PacketType = 3
+	PACKET_TYPE_PUBACK      PacketType = 4
+	PACKET_TYPE_PUBREC      PacketType = 5
+	PACKET_TYPE_PUBREL      PacketType = 6
+	PACKET_TYPE_PUBCOMP     PacketType = 7
+	PACKET_TYPE_SUBSCRIBE   PacketType = 8
+	PACKET_TYPE_SUBACK      PacketType = 9
+	PACKET_TYPE_UNSUBSCRIBE PacketType = 10
+	PACKET_TYPE_UNSUBACK    PacketType = 11
+	PACKET_TYPE_PINGREQ     PacketType = 12
+	PACKET_TYPE_PINGRESP    PacketType = 13
+	PACKET_TYPE_DISCONNECT  PacketType = 14
+	PACKET_TYPE_RESERVED2   PacketType = 15
 )
 
 type ReturnCode int

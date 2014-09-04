@@ -1,5 +1,6 @@
 package mqtt
 
 type Message interface {
-	GetType() MessageType
+	GetType() PacketType
+	GetTypeAsString() string
 }

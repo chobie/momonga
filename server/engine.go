@@ -55,11 +55,11 @@ func (self *Pidgey) SetupCallback() {
 		log.Debug("Message: id: %d, %+v", id, message)
 
 		switch (message.GetType()) {
-		case codec.MESSAGE_TYPE_PUBLISH:
+		case codec.PACKET_TYPE_PUBLISH:
 			p := message.(*codec.PublishMessage)
 			if p.QosLevel == 2 {
 				ack := codec.NewPubcompMessage()
-				ack.Identifier = p.Identifier
+				ack.PacketIdentifier = p.PacketIdentifier
 				// TODO: あれ、なんだっけこれ？
 //				if conn != nil {
 //					conn.WriteMessageQueue(ack)
@@ -79,7 +79,7 @@ func (self *Pidgey) handshake(conn Connection) error {
 		return err
 	}
 
-	if msg.GetType() != codec.MESSAGE_TYPE_CONNECT {
+	if msg.GetType() != codec.PACKET_TYPE_CONNECT {
 		return errors.New("Invalid message")
 	}
 	p := msg.(*codec.ConnectMessage)
@@ -130,7 +130,7 @@ func (self *Pidgey) Run() {
 			// これはようはWriteQueueってやつだ
 		case msg := <- self.Queue:
 			switch (msg.GetType()) {
-			case codec.MESSAGE_TYPE_PUBLISH:
+			case codec.PACKET_TYPE_PUBLISH:
 				m := msg.(*codec.PublishMessage)
 				fmt.Printf("Message Arrived(%d): spared to (%s): Retain: %d, %+v\n", m.QosLevel, m.TopicName, m.Retain, m.Payload)
 
@@ -158,10 +158,10 @@ func (self *Pidgey) Run() {
 				fmt.Printf("targets; %+v\n", targets)
 				if m.QosLevel > 0 {
 					id := self.OutGoingTable.NewId()
-					m.Identifier = id
+					m.PacketIdentifier = id
 					log.Debug("Count: %d", len(targets))
 					if sender, ok := m.Opaque.(Connection); ok {
-						self.OutGoingTable.Register2(m.Identifier, m, len(targets), sender)
+						self.OutGoingTable.Register2(m.PacketIdentifier, m, len(targets), sender)
 					}
 				}
 
@@ -214,7 +214,7 @@ func (self *Pidgey) handle(conn Connection) error {
 	// TODO: Roleとかのflagつけて同一のにしちゃってもいいきもしたけどこみいってくると面倒という
 	switch (msg.GetType()) {
 
-	case codec.MESSAGE_TYPE_PUBLISH:
+	case codec.PACKET_TYPE_PUBLISH:
 		p := msg.(*codec.PublishMessage)
 		log.Debug("Received Publish Message: %+v", p)
 		log.Debug("message: %s", string(p.Payload))
@@ -225,12 +225,12 @@ func (self *Pidgey) handle(conn Connection) error {
 
 		if p.QosLevel == 1 {
 			ack := codec.NewPubackMessage()
-			ack.Identifier = p.Identifier
+			ack.PacketIdentifier = p.PacketIdentifier
 			conn.WriteMessageQueue(ack)
 			log.Debug("Send puback message to sender.")
 		} else if p.QosLevel == 2 {
 			ack := codec.NewPubrecMessage()
-			ack.Identifier = p.Identifier
+			ack.PacketIdentifier = p.PacketIdentifier
 			conn.WriteMessageQueue(ack)
 			log.Debug("Send pubrec message to sender.")
 		}
@@ -239,70 +239,70 @@ func (self *Pidgey) handle(conn Connection) error {
 		// Server / ClientはそれぞれMessageTableが違うの？
 		if p.QosLevel > 0 {
 //			id := conn.GetOutGoingTable().NewId()
-//			p.Identifier = id
-			conn.GetOutGoingTable().Register(p.Identifier, p, conn)
+//			p.PacketIdentifier = id
+			conn.GetOutGoingTable().Register(p.PacketIdentifier, p, conn)
 			p.Opaque = conn
 		}
 
 		self.Queue <- p
 		break
 
-	case codec.MESSAGE_TYPE_PUBACK:
+	case codec.PACKET_TYPE_PUBACK:
 		p := msg.(*codec.PubackMessage)
 		log.Debug("Received Puback Message: %+v", p)
 
 		// TODO: これのIDは内部的なの？
-		self.OutGoingTable.Unref(p.Identifier)
+		self.OutGoingTable.Unref(p.PacketIdentifier)
 
 		// TODO: Refcounting
 		// PUBACKが帰ってくるのはServer->ClientでQoS1で送った時だけ。
 		// PUBACKが全員分かえってきたらメッセージを消してもいい
 		break
 
-	case codec.MESSAGE_TYPE_PUBREC:
+	case codec.PACKET_TYPE_PUBREC:
 		p := msg.(*codec.PubrecMessage)
 		log.Debug("Received Pubrec Message: %+v", p)
 		ack := codec.NewPubrelMessage()
-		ack.Identifier = p.Identifier
+		ack.PacketIdentifier = p.PacketIdentifier
 		conn.WriteMessageQueue(ack)
 		break
 
-	case codec.MESSAGE_TYPE_PUBREL:
+	case codec.PACKET_TYPE_PUBREL:
 		log.Debug("Received Pubrel Message: %+v", msg)
 		p := msg.(*codec.PubrelMessage)
 		ack := codec.NewPubcompMessage()
-		ack.Identifier = p.Identifier
+		ack.PacketIdentifier = p.PacketIdentifier
 		conn.WriteMessageQueue(ack)
 		log.Debug("Send pubcomp message to sender.")
 		break
 
-	case codec.MESSAGE_TYPE_PUBCOMP:
+	case codec.PACKET_TYPE_PUBCOMP:
 		log.Debug("Received Pubcomp Message: %+v", msg)
 		p := msg.(*codec.PubcompMessage)
-		self.OutGoingTable.Unref(p.Identifier)
+		self.OutGoingTable.Unref(p.PacketIdentifier)
 		break
 
-	case codec.MESSAGE_TYPE_SUBSCRIBE:
+	case codec.PACKET_TYPE_SUBSCRIBE:
 		p := msg.(*codec.SubscribeMessage)
 		log.Debug("Subscribe Message: %+v\n", p)
 
 		ack := codec.NewSubackMessage()
-		ack.Identifier = p.Identifier
+		ack.PacketIdentifier = p.PacketIdentifier
 		var retained []*codec.PublishMessage
 		for _, payload := range p.Payload {
 			var topic *Topic
 
-			self.Qlobber.Add(payload.TopicFilter, conn)
-			conn.AppendSubscribedTopic(payload.TopicFilter)
+			self.Qlobber.Add(payload.TopicPath, conn)
+			conn.AppendSubscribedTopic(payload.TopicPath)
 
 			// TODO: これはAtomicにさせたいなー、とおもったり
-			if !self.HasTopic(payload.TopicFilter) {
-				topic, _ = self.CreateTopic(payload.TopicFilter)
+			if !self.HasTopic(payload.TopicPath) {
+				topic, _ = self.CreateTopic(payload.TopicPath)
 			} else {
-				topic, _ = self.GetTopic(payload.TopicFilter)
+				topic, _ = self.GetTopic(payload.TopicPath)
 			}
 
-			retaines := self.RetainMatch(payload.TopicFilter)
+			retaines := self.RetainMatch(payload.TopicPath)
 			log.Debug("retaines: %+v\n", retaines)
 			if len(retaines) > 0 {
 				log.Debug("Publish Retained message: %+v", topic.Retain)
@@ -311,7 +311,7 @@ func (self *Pidgey) handle(conn Connection) error {
 					pp := codec.NewPublishMessage()
 					id := conn.GetOutGoingTable().NewId()
 
-					pp.Identifier = id
+					pp.PacketIdentifier = id
 					pp.Payload = retaines[i].Payload
 					pp.TopicName = retaines[i].TopicName
 					pp.QosLevel = retaines[i].QosLevel
@@ -331,26 +331,26 @@ func (self *Pidgey) handle(conn Connection) error {
 		}
 		break
 
-	case codec.MESSAGE_TYPE_UNSUBSCRIBE:
+	case codec.PACKET_TYPE_UNSUBSCRIBE:
 		p := msg.(*codec.UnsubscribeMessage)
 		log.Debug("Received unsubscribe: %+v\n", p)
 		for _, payload := range p.Payload {
 			log.Debug("sent Unsuback message")
 
 			ack := codec.NewUnsubackMessage()
-			ack.Identifier = p.Identifier
+			ack.PacketIdentifier = p.PacketIdentifier
 			conn.WriteMessageQueue(ack)
-			self.Qlobber.Remove(payload.TopicFilter, conn)
+			self.Qlobber.Remove(payload.TopicPath, conn)
 		}
 		break
 
-	case codec.MESSAGE_TYPE_PINGREQ:
+	case codec.PACKET_TYPE_PINGREQ:
 		//p := msg.(*codec.PingreqMessage)
 		r := codec.NewPingrespMessage()
 		conn.WriteMessageQueue(r)
 		break
 
-	case codec.MESSAGE_TYPE_DISCONNECT:
+	case codec.PACKET_TYPE_DISCONNECT:
 		return errors.New("Received Disconnect request: Closed")
 	default:
 		fmt.Printf("Not supported: %d\n", msg.GetType())

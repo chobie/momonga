@@ -10,7 +10,7 @@ import (
 type PublishMessage struct {
 	FixedHeader
 	TopicName string
-	Identifier uint16
+	PacketIdentifier uint16
 	Payload []byte
 	Opaque interface{}
 }
@@ -30,7 +30,7 @@ func (self *PublishMessage) decode(reader io.Reader) error {
 	self.TopicName = string(buffer.Bytes())
 	remaining -= int(length)
 	if self.FixedHeader.QosLevel > 0 {
-		binary.Read(reader, binary.BigEndian, &self.Identifier)
+		binary.Read(reader, binary.BigEndian, &self.PacketIdentifier)
 		remaining -= int(2)
 	}
 
@@ -50,7 +50,7 @@ func (self *PublishMessage) encode() ([]byte, int, error) {
 	buffer.Write([]byte(self.TopicName))
 
 	if self.QosLevel > 0 {
-		binary.Write(buffer, binary.BigEndian, self.Identifier)
+		binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
 		total += 2
 	}
 	buffer.Write(self.Payload)

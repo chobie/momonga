@@ -9,14 +9,14 @@ import (
 type UnsubscribeMessage struct {
 	FixedHeader
 	TopicName string
-	Identifier uint16
+	PacketIdentifier uint16
 	Payload []SubscribePayload
 }
 
 func (self *UnsubscribeMessage) decode(reader io.Reader) error {
 	remaining := self.RemainingLength
 
-	binary.Read(reader, binary.BigEndian, &self.Identifier)
+	binary.Read(reader, binary.BigEndian, &self.PacketIdentifier)
 	remaining -= int(2)
 
 	buffer := bytes.NewBuffer(nil)
@@ -26,7 +26,7 @@ func (self *UnsubscribeMessage) decode(reader io.Reader) error {
 		m := SubscribePayload{}
 		binary.Read(reader, binary.BigEndian, &length)
 		_, _ = io.CopyN(buffer, reader, int64(length))
-		m.TopicFilter = string(buffer.Bytes())
+		m.TopicPath = string(buffer.Bytes())
 		buffer.Reset()
 		self.Payload = append(self.Payload, m)
 		remaining -= (int(length) + 1 + 2)
@@ -39,14 +39,14 @@ func (self *UnsubscribeMessage) encode() ([]byte, int, error) {
 	buffer := bytes.NewBuffer(nil)
 	var total = 0
 
-	binary.Write(buffer, binary.BigEndian, self.Identifier)
+	binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
 	total += 2
 
 	for i := 0; i < len(self.Payload); i++ {
 		var length uint16 = 0
-		length = uint16(len(self.Payload[i].TopicFilter))
+		length = uint16(len(self.Payload[i].TopicPath))
 		binary.Write(buffer, binary.BigEndian, length)
-		buffer.Write([]byte(self.Payload[i].TopicFilter))
+		buffer.Write([]byte(self.Payload[i].TopicPath))
 		total += 2 + int(length)
 	}
 

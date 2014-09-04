@@ -83,7 +83,7 @@ func subscribe(ctx *cli.Context) {
 	}
 
 	c.Connect()
-	c.SetPublishCallback(func(TopicFilter string, Payload []byte) {
+	c.SetPublishCallback(func(TopicPath string, Payload []byte) {
 		fmt.Printf("%s\n", Payload)
 	})
 	c.Subscribe(topic, qos)
