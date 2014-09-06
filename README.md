@@ -20,6 +20,10 @@ Misc
 * SSL Support
 * UnixSocket Support
 
+# Requirements
+
+Go 1.3 higher
+
 # Version
 
 dev
