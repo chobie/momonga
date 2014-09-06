@@ -125,10 +125,8 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 	if mux, ok = self.Connections[p.Identifier]; ok {
 		mux.Attach(conn)
 	} else {
-		mux = &MmuxConnection{
-			Identifier: p.Identifier,
-			Connections: map[string]Connection{},
-		}
+		mux = NewMmuxConnection()
+		mux.Identifier = p.Identifier
 		mux.Attach(conn)
 	}
 
@@ -145,6 +143,30 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 		// Retry MapもClear
 		delete(self.RetryMap, mux.GetId())
 		self.CleanHoge(mux)
+		mux.GetOutGoingTable().Clean()
+
+		// ここだとQos1, 2は消す必要があるのか?
+	} else {
+		// Sessionを継続させる
+		tbl := mux.GetOutGoingTable()
+		//TODO: check qos1, 2 message and resend to this client.
+		log.Debug("Hash: %d", len(tbl.Hash))
+
+		for _, c := range tbl.Hash {
+			msgs := make([]codec.Message, 0)
+			if v, ok := c.Message.(*codec.PublishMessage); ok {
+				if v.QosLevel > 0 {
+					//mux.WriteMessageQueue(c.Message)
+					msgs = append(msgs, c.Message)
+				}
+			}
+			tbl.Clean()
+			// ここはもうちっと真面目に消さないといけない
+			for _, v := range msgs {
+				log.Debug("  message: %+v\n", v)
+				mux.WriteMessageQueue(v)
+			}
+		}
 	}
 
 	return mux, nil
@@ -191,10 +213,11 @@ func (self *Pidgey) Run() {
 
 				// Publishで受け取ったMessageIdのやつのCountをとっておく
 				// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
-				targets := self.Qlobber.Match(m.TopicName)
 				log.Debug("TopicName: %s", m.TopicName)
+				targets := self.Qlobber.Match(m.TopicName)
 				if m.QosLevel > 0 {
 					// TODO: ClientごとにInflightTableを持つ
+					// engineのOutGoingTableなのはとりあえず、ということ
 					id := self.OutGoingTable.NewId()
 					m.PacketIdentifier = id
 
@@ -291,9 +314,12 @@ func (self *Pidgey) handle(conn Connection) error {
 		// TODO: QoSによっては適切なMessageIDを追加する
 		// Server / ClientはそれぞれMessageTableが違うの？
 		if p.QosLevel > 0 {
+// TODO: と、いうことはメッセージの deep コピーが簡単にできるようにしないとだめ
+// 色々考えると面倒だけど、ひとまずはフルコピーでやっとこう
 //			id := conn.GetOutGoingTable().NewId()
 //			p.PacketIdentifier = id
 			conn.GetOutGoingTable().Register(p.PacketIdentifier, p, conn)
+			//puback,pubrec,rel,comp
 			p.Opaque = conn
 		}
 
@@ -301,26 +327,32 @@ func (self *Pidgey) handle(conn Connection) error {
 		break
 
 	case codec.PACKET_TYPE_PUBACK:
+		//pubackを受け取る、ということはserverがsender
 		p := msg.(*codec.PubackMessage)
 		log.Debug("Received Puback Message from [%s: %d]", conn.GetId(), p.PacketIdentifier)
 
 		// TODO: これのIDは内部的なの？
 		self.OutGoingTable.Unref(p.PacketIdentifier)
 
+		conn.GetOutGoingTable().Unref(p.PacketIdentifier)
 		// TODO: Refcounting
 		// PUBACKが帰ってくるのはServer->ClientでQoS1で送った時だけ。
-		// PUBACKが全員分かえってきたらメッセージを消してもいい
+		// PUBACKが全員分かえってきたらメッセージを消してもいい。実装自体はcallbackでやってるのでここでは下げるだけ
 		break
 
 	case codec.PACKET_TYPE_PUBREC:
+		//pubrecを受け取る、ということはserverがsender
 		p := msg.(*codec.PubrecMessage)
 		log.Debug("Received Pubrec Message from [%s: %d]", conn.GetId(), p.PacketIdentifier)
 		ack := codec.NewPubrelMessage()
 		ack.PacketIdentifier = p.PacketIdentifier
 		conn.WriteMessageQueue(ack)
+		conn.GetOutGoingTable().Unref(p.PacketIdentifier)
+
 		break
 
 	case codec.PACKET_TYPE_PUBREL:
+		//pubrelを受け取る、ということはserverがreceiver
 		p := msg.(*codec.PubrelMessage)
 		log.Debug("Received Pubrel Message: [%s: %d]", conn.GetId(), p.PacketIdentifier)
 		ack := codec.NewPubcompMessage()
@@ -330,9 +362,11 @@ func (self *Pidgey) handle(conn Connection) error {
 		break
 
 	case codec.PACKET_TYPE_PUBCOMP:
+		//pubcompを受け取る、ということはserverがsender
 		log.Debug("Received Pubcomp Message from %s: %+v", conn.GetId(), msg)
 		p := msg.(*codec.PubcompMessage)
 		self.OutGoingTable.Unref(p.PacketIdentifier)
+		conn.GetOutGoingTable().Unref(p.PacketIdentifier)
 		break
 
 	case codec.PACKET_TYPE_SUBSCRIBE:

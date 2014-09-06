@@ -17,6 +17,19 @@ type MmuxConnection struct {
 	MaxOfflineQueue int
 	Identifier string
 	CleanSession bool
+	OutGoingTable *util.MessageTable
+}
+
+func NewMmuxConnection() *MmuxConnection {
+	conn := &MmuxConnection {
+		OutGoingTable: util.NewMessageTable(),
+		Connections: map[string]Connection{},
+	}
+	conn.OutGoingTable.SetOnFinish(func(id uint16, msg mqtt.Message, opaque interface{}) {
+		fmt.Printf(">>>>>> packet identifier %d is deleted\n", id)
+	})
+
+	return conn
 }
 
 func (self *MmuxConnection) GetId() string {
@@ -183,11 +196,12 @@ func (self *MmuxConnection) HasWillMessage() bool {
 }
 
 func (self *MmuxConnection) GetOutGoingTable() *util.MessageTable {
-	if self.PrimaryConnection == nil {
-		return nil
-	}
-
-	return self.PrimaryConnection.GetOutGoingTable()
+	return self.OutGoingTable
+//	if self.PrimaryConnection == nil {
+//		return nil
+//	}
+//
+//	return self.PrimaryConnection.GetOutGoingTable()
 }
 
 func (self *MmuxConnection) GetSubscribedTopics() []string {

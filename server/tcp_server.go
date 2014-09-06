@@ -61,8 +61,10 @@ func (self *TcpServer) HandleConnection(Identifier string) {
 			conn.Close()
 
 			if mux.ShouldClearSession() {
+				delete(self.Engine.Connections, mux.GetId())
 				delete(self.Connections, mux.GetId())
 			}
+
 			// ここはテンポラリ接続の所
 			delete(self.Connections, Identifier)
 			self.ConnectionCount--

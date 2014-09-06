@@ -93,6 +93,8 @@ func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yie
 			case m := <- conn.WriteQueue:
 				data, err :=  mqtt.Encode(m)
 				if err != nil {
+					// まずここでエラーはでないだろう
+					panic(fmt.Sprintf("Unexpected encode error: %s", err))
 					continue
 				}
 
@@ -104,7 +106,7 @@ func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yie
 					if v, ok := m.(*mqtt.PublishMessage); ok {
 						switch (v.QosLevel) {
 						case 1, 2:
-							// TODO: これはこれで違うんだよな
+							// TODO: これはこれで違うんだよな。とりあえずおいているだけ
 							retry <- &Retryable{
 								Id: conn.GetId(),
 								Payload: m,

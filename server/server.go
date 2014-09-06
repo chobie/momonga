@@ -3,6 +3,8 @@ package server
 import (
 )
 
+
+// TODO: あとでけす？
 type Server interface {
 //	SendErrorMessage(conn Connection, t Command_CommandType, message string) error
 //	GetCoordinator() coordinator.Coordinator

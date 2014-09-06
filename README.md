@@ -79,6 +79,30 @@ http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/csprd01/mqtt-v3.1.1-csprd01.html
 * Conformance Test
 http://www.eclipse.org/paho/clients/testing/
 
+# Conformance Test
+
+```
+momonga% python3 interoperability/client_test.py
+hostname localhost port 1883
+clean up starting
+clean up finished
+Basic test starting
+Basic test succeeded
+Retained message test starting
+Retained message test succeeded
+This server is queueing QoS 0 messages for offline clients
+Offline message queueing test succeeded
+Will message test succeeded
+Overlapping subscriptions test starting
+This server is publishing one message for all matching overlapping subscriptions, not one for each.
+Overlapping subscriptions test succeeded
+Keepalive test starting
+Keepalive test succeeded
+Redelivery on reconnect test starting
+Redelivery on reconnect test succeeded
+test suite succeeded
+```
+
 # License - MIT License -
 
 Copyright (c) 2014 Shuhei Tanuma,
