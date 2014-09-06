@@ -120,9 +120,11 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 
 	var mux *MmuxConnection
 	var ok bool
+	session_exist := false
 
 	if mux, ok = self.Connections[p.Identifier]; ok {
 		mux.Attach(conn)
+		session_exist = true
 	} else {
 		mux = NewMmuxConnection()
 		mux.Identifier = p.Identifier
@@ -132,9 +134,16 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 	conn.SetKeepaliveInterval(int(p.KeepAlive))
 	mux.SetKeepaliveInterval(int(p.KeepAlive))
 	reply := codec.NewConnackMessage()
-	// うーん。どうしよっかな。
-	conn.WriteMessage(reply)
 
+	if session_exist {
+		// [MQTT-3.2.2-2] If the Server accepts a connection with CleanSession set to 0,
+		// the value set in Session Present depends on whether the Server already has stored Session state
+		// for the supplied client ID. If the Server has stored Session state,
+		// it MUST set Session Present to 1 in the CONNACK packet.
+		reply.Reserved |= 0x01
+	}
+
+	conn.WriteMessage(reply)
 	mux.SetState(STATE_ACCEPTED)
 	self.Connections[mux.GetId()] = mux
 
