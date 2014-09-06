@@ -3,11 +3,13 @@ package server
 import (
 	"net"
 	"os"
+	"io"
 	"time"
 	"crypto/tls"
 	log "github.com/chobie/momonga/logger"
 	"net/http"
 	"code.google.com/p/go.net/websocket"
+//	"github.com/chobie/momonga/encoding/mqtt"
 )
 
 type TcpServer struct {
@@ -18,6 +20,8 @@ type TcpServer struct {
 	shutdown       chan bool
 	tlsConfig      *tls.Config
 	forceSSLUsers map[string]bool
+
+	// remote addr based map (ようはてんぽらり)
 	Connections map[string]Connection
 	ConnectionCount int
 	Engine *Pidgey
@@ -27,18 +31,40 @@ func (self *TcpServer) SSLAvailable() bool {
 	return true
 }
 
-func (self *TcpServer) HandleConnection(conn Connection) {
-	err := self.Engine.Handshake(conn)
+func (self *TcpServer) HandleConnection(Identifier string) {
+	var conn Connection
+	var ok bool
+
+	if conn, ok = self.Connections[Identifier]; !ok {
+		log.Error("Connection not find: %s", Identifier)
+		return
+	}
+
+	mux, err := self.Engine.Handshake(conn)
 	if err != nil{
 		log.Debug("Handshake Error: %s", err)
 		return
 	}
 
 	for {
-		err := self.Engine.HandleRequest(conn)
+		err := self.Engine.HandleRequest(mux)
 		if err != nil {
-			log.Error("Handle Connection Error: %s", err)
-			delete(self.Connections, conn.GetSocket().RemoteAddr().String())
+			// Closeとかは必ずここでやる
+			if _, ok := err.(*DisconnectError); !ok {
+				if err != io.EOF {
+					log.Error("Handle Connection Error: [%s] %s", conn.GetId(), err)
+				}
+			}
+
+			// どうしよっかなー
+			mux.Detach(conn)
+			conn.Close()
+
+			if mux.ShouldClearSession() {
+				delete(self.Connections, mux.GetId())
+			}
+			// ここはテンポラリ接続の所
+			delete(self.Connections, Identifier)
 			self.ConnectionCount--
 			return
 		}
@@ -112,14 +138,14 @@ func (self *TcpServer) acceptLoop(listener net.Listener, yield func()) {
 			// TODO: Send Error message and close connection immediately as we don't won't accept new connection.
 		}
 
-		conn := NewTcpConnection(client, self, func(c Connection, time time.Time) {
+		conn := NewTcpConnection(client, self, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
 				log.Debug("Closing Connection")
 				//conn.Close()
 			})
-		self.Connections[client.RemoteAddr().String()] = conn
+		self.Connections[conn.GetId()] = conn
 		self.ConnectionCount++
 
-		go self.HandleConnection(conn)
+		go self.HandleConnection(conn.GetId())
 	}
 }
 
@@ -141,7 +167,7 @@ func (self *TcpServer) unixListenAndServe() {
 }
 
 func (self *TcpServer) RemoveConnection(conn Connection) {
-	delete(self.Connections, conn.GetSocket().RemoteAddr().String())
+	delete(self.Connections, conn.GetId())
 	self.ConnectionCount--
 }
 
@@ -162,13 +188,13 @@ func (self *TcpServer) ListenAndServe() {
 
 	http.Handle("/mqtt", websocket.Handler(func(ws *websocket.Conn) {
 			log.Debug("Accept websocket")
-			conn := NewTcpConnection(ws, self, func(c Connection, time time.Time) {
+			conn := NewTcpConnection(ws, self, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
 					log.Debug("Closing Connection")
 					//conn.Close()
 				})
 			self.Connections[ws.RemoteAddr().String()] = conn
 			self.ConnectionCount++
-			self.HandleConnection(conn)
+			self.HandleConnection(ws.RemoteAddr().String())
 		}))
 	go http.ListenAndServe(":9999", nil)
 	go self.Engine.Run()

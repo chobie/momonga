@@ -13,7 +13,7 @@ type Option struct {
 	TransporterCallback func() (io.ReadWriteCloser, error)
 	Magic               []byte
 	Version             int
-	PacketIdentifier          string
+	Identifier          string
 	Ticker              *time.Ticker
 	TickerCallback      func(time.Time, *Client) error
 	WillTopic           string
@@ -29,7 +29,7 @@ type Client struct {
 	Connection      *Connection
 	PublishCallback func(string, []byte)
 	Option          Option
-	ClearSession    bool
+	CleanSession    bool
 	Mutex           sync.RWMutex
 	Errors          chan error
 	Kicker          *time.Timer
@@ -41,11 +41,11 @@ func NewClient(opt Option) *Client {
 			Magic:   []byte("MQTT"),
 			Version: 4,
 			// Memo: User have to set PacketIdentifier themselves
-			PacketIdentifier: "momonga-mqtt",
+			Identifier: "momonga-mqtt",
 			Keepalive:  10,
 		},
 		Connection: NewConnection(),
-		ClearSession:    true,
+		CleanSession:    true,
 		Mutex:           sync.RWMutex{},
 		Errors: make(chan error, 128),
 	}
@@ -56,8 +56,8 @@ func NewClient(opt Option) *Client {
 	if opt.Version == 0 {
 		opt.Version = client.Option.Version
 	}
-	if len(opt.PacketIdentifier) < 1 {
-		opt.PacketIdentifier = client.Option.PacketIdentifier
+	if len(opt.Identifier) < 1 {
+		opt.Identifier = client.Option.Identifier
 	}
 
 	// TODO: provide defaultOption function.
@@ -66,16 +66,16 @@ func NewClient(opt Option) *Client {
 	return client
 }
 
-func (self *Client) EnableClearSession() {
-	self.ClearSession = true
+func (self *Client) EnableCleanSession() {
+	self.CleanSession = true
 }
 
-func (self *Client) DisableClearSession() {
-	self.ClearSession = false
+func (self *Client) DisableCleanSession() {
+	self.CleanSession = false
 }
 
-func (self *Client) SetClearSession(bval bool) {
-	self.ClearSession = bval
+func (self *Client) SetCleanSession(bval bool) {
+	self.CleanSession = bval
 }
 
 func (self *Client) getConnectionState() ConnectionState {
@@ -99,8 +99,9 @@ func (self *Client) Connect() error {
 	msg := codec.NewConnectMessage()
 	msg.Magic = self.Option.Magic
 	msg.Version = uint8(self.Option.Version)
-	msg.PacketIdentifier = self.Option.PacketIdentifier
-	msg.CleanSession = self.ClearSession
+	msg.Identifier = self.Option.Identifier
+	msg.CleanSession = self.CleanSession
+	msg.KeepAlive = uint16(self.Option.Keepalive)
 
 	if len(self.Option.WillTopic) > 0 {
 		msg.Will = &codec.WillMessage{

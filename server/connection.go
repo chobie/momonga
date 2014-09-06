@@ -14,6 +14,7 @@ const (
 	STATE_CONNECTED State = iota
 	STATE_ACCEPTED
 	STATE_IDLE
+	STATE_DETACHED
 	STATE_SEND
 	STATE_RECEIVE
 	STATE_SHUTDOWN
@@ -57,4 +58,7 @@ type Connection interface {
 	AppendSubscribedTopic(string)
 	RemoveSubscribedTopic(string)
 	SetKeepaliveInterval(int)
+	GetId() string
+	DisableClearSession()
+	ShouldClearSession() bool
 }

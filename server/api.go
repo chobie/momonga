@@ -20,6 +20,10 @@ func NewTcpServer() *TcpServer{
 			Qlobber: util.NewQlobber(),
 			Retain: map[string]*codec.PublishMessage{},
 			SessionStore: NewSessionStore(),
+			Connections: map[string]*MmuxConnection{},
+			SubscribeMap: map[string]string{},
+			RetryMap: map[string][]*Retryable{},
+			ErrorChannel: make(chan *Retryable, 8192),
 		},
 	}
 	server.Engine.SetupCallback()

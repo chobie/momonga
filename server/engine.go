@@ -12,6 +12,15 @@ import (
 	"github.com/chobie/momonga/util"
 )
 
+type DisconnectError struct {
+}
+func (e *DisconnectError) Error() string { return "received disconnect message" }
+
+type Retryable struct {
+	Id string
+	Payload interface{}
+}
+
 type Pidgey struct {
 	Topics map[string]*Topic
 	Queue chan codec.Message
@@ -20,6 +29,10 @@ type Pidgey struct {
 	// TODO: improve this.
 	Retain map[string]*codec.PublishMessage
 	SessionStore *SessionStore
+	Connections map[string]*MmuxConnection
+	SubscribeMap map[string]string
+	RetryMap map[string][]*Retryable
+	ErrorChannel chan *Retryable
 }
 
 func (self *Pidgey) HasTopic(Topic string) bool {
@@ -67,60 +80,87 @@ func (self *Pidgey) SetupCallback() {
 			}
 			break
 		default:
-			log.Debug("Not supported; %d", message.GetType())
+			log.Debug("1Not supported; %d", message.GetType())
 		}
 	})
 }
 
 
-func (self *Pidgey) handshake(conn Connection) error {
+func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 	msg, err := conn.ReadMessage()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if msg.GetType() != codec.PACKET_TYPE_CONNECT {
-		return errors.New("Invalid message")
+		return nil, errors.New("Invalid message")
 	}
 	p := msg.(*codec.ConnectMessage)
-	log.Debug("CONNECT: %+v\n", p)
 
 	if !(string(p.Magic) == "MQTT" || string(p.Magic) == "MQIsdp") {
-		return errors.New("Invalid protocol")
+		return nil, errors.New("Invalid protocol")
 	}
+	log.Debug("CONNECT [%s]: %+v", conn.GetId(), conn)
+	// TODO: version check
+	for _, v := range self.Connections {
+		log.Debug("  Connection: %s", v.GetId())
+	}
+
 
 	// TODO: 認証部分をつける
 
-	// TODO: Willがあればキープしておく
-	if (p.Flag & 0x4 > 0) {
+	// preserve messagen when will flag set
+	if (p.Flag & 0x4) > 0 {
 		log.Debug("This message has Will flag: %+v\n", p.Will)
 		conn.SetWillMessage(*p.Will)
 	}
-	conn.SetKeepaliveInterval(int(p.KeepAlive))
 
-	reply := codec.NewConnackMessage()
-	// TODO: ClearSession Flag
-	log.Debug("Send connack: %+v", reply)
-	// Publishしかやっとらんかった
-	//self.Queue <- reply
-	err = conn.WriteMessage(reply)
-	if err != nil {
-		log.Debug("Error: %s", err)
+	if !p.CleanSession {
+		conn.DisableClearSession()
 	}
-	conn.SetState(STATE_ACCEPTED)
-	return nil
+
+	var mux *MmuxConnection
+	var ok bool
+
+	if mux, ok = self.Connections[p.Identifier]; ok {
+		mux.Attach(conn)
+	} else {
+		mux = &MmuxConnection{
+			Identifier: p.Identifier,
+			Connections: map[string]Connection{},
+		}
+		mux.Attach(conn)
+	}
+
+	conn.SetKeepaliveInterval(int(p.KeepAlive))
+	mux.SetKeepaliveInterval(int(p.KeepAlive))
+	reply := codec.NewConnackMessage()
+	// うーん。どうしよっかな。
+	conn.WriteMessage(reply)
+
+	mux.SetState(STATE_ACCEPTED)
+	self.Connections[mux.GetId()] = mux
+
+	if p.CleanSession {
+		// Retry MapもClear
+		delete(self.RetryMap, mux.GetId())
+		self.CleanHoge(mux)
+	}
+
+	return mux, nil
 }
 
-func (self *Pidgey) Handshake(conn Connection) error {
-	err := self.handshake(conn)
+func (self *Pidgey) Handshake(conn Connection) (*MmuxConnection, error) {
+	mux, err := self.handshake(conn)
+
 	if err != nil {
 		if err != io.EOF {
 			msg := codec.NewDisconnectMessage()
 			conn.WriteMessage(msg)
 		}
-		return err;
+		return nil, err;
 	}
-	return nil
+	return mux, nil
 }
 
 func (self *Pidgey) Run() {
@@ -132,75 +172,89 @@ func (self *Pidgey) Run() {
 			switch (msg.GetType()) {
 			case codec.PACKET_TYPE_PUBLISH:
 				m := msg.(*codec.PublishMessage)
-				fmt.Printf("Message Arrived(%d): spared to (%s): Retain: %d, %+v\n", m.QosLevel, m.TopicName, m.Retain, m.Payload)
+				log.Debug("sending PUBLISH [id:%s, lvl:%d]", m.PacketIdentifier, m.QosLevel)
 
-				topic, err := self.GetTopic(m.TopicName)
-				if err != nil{
-					fmt.Printf("err: %s\n", err)
-					//continue
-				}
+				//topic, err := self.GetTopic(m.TopicName)
+//				if err != nil{
+//					fmt.Printf("err: %s\n", err)
+//					//continue
+//				}
 
-				// TODO: Retainがついてたら保持する
-				//   Retainはサーバーが再起動しても保持しなければならない
+				// TODO: Retainはサーバーが再起動しても保持しなければならない
 				if m.Retain > 0 {
-					fmt.Printf("Retain Flag\n")
 					if len(m.Payload) == 0 {
 						delete(self.Retain, m.TopicName)
 					} else {
 						self.Retain[m.TopicName] = m
-						fmt.Printf("Retained message: %s: %+v %+v\n", m.TopicName, topic, topic.Retain)
 					}
 				}
 
 				// Publishで受け取ったMessageIdのやつのCountをとっておく
-				// で、Pubackが帰ってきたらrefcountを下げて0担ったらMessageを消す
+				// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
 				targets := self.Qlobber.Match(m.TopicName)
-				fmt.Printf("targets; %+v\n", targets)
+				log.Debug("TopicName: %s", m.TopicName)
 				if m.QosLevel > 0 {
+					// TODO: ClientごとにInflightTableを持つ
 					id := self.OutGoingTable.NewId()
 					m.PacketIdentifier = id
-					log.Debug("Count: %d", len(targets))
+
 					if sender, ok := m.Opaque.(Connection); ok {
 						self.OutGoingTable.Register2(m.PacketIdentifier, m, len(targets), sender)
 					}
 				}
 
 				for i := range targets {
-					targets[i].(*TcpConnection).WriteMessageQueue(m)
+					log.Debug("sending publish message to %s [%s %s %d %d]", targets[i].(Connection).GetId(), m.TopicName, m.Payload, m.PacketIdentifier, m.QosLevel)
+					targets[i].(Connection).WriteMessageQueue(m)
 				}
 				break
 			default:
 				log.Debug("ARE?: %+v", msg)
 			}
+		case r := <- self.ErrorChannel:
+			self.RetryMap[r.Id] = append(self.RetryMap[r.Id], r)
+			log.Debug("ADD RETRYABLE MAP")
+			break
 		}
 	}
 }
 
-func (self *Pidgey) HandleRequest(conn Connection) error {
-	err := self.handle(conn)
-
-	if err != nil {
-		if conn.HasWillMessage() {
-			will := conn.GetWillMessage()
-			msg := codec.NewPublishMessage()
-			msg.TopicName = will.Topic
-			msg.Payload = []byte(will.Message)
-			msg.QosLevel = int(will.Qos)
-			self.Queue <- msg
-		}
-
-		// エラーなんで接続前にsubscriberからはずす
-		for _, t := range conn.GetSubscribedTopics() {
-//			topic, err := self.GetTopic(t)
-//			if err != nil {
-//				continue
-//			}
-//			topic.RemoveConnection(conn)
+func (self *Pidgey) CleanHoge(conn Connection) {
+	for _, t := range conn.GetSubscribedTopics() {
+		if conn.ShouldClearSession() {
 			self.Qlobber.Remove(t, conn)
 		}
-		return err
+	}
+	if conn.ShouldClearSession() {
+		delete(self.SubscribeMap, conn.GetId())
+	}
+}
+
+func (self *Pidgey) SendWillMessage(conn Connection) {
+	will := conn.GetWillMessage()
+	msg := codec.NewPublishMessage()
+	msg.TopicName = will.Topic
+	msg.Payload = []byte(will.Message)
+	msg.QosLevel = int(will.Qos)
+	log.Debug("%s => %s", msg.TopicName, msg.Payload)
+	self.Queue <- msg
+}
+
+func (self *Pidgey) HandleRequest(conn Connection) error {
+	if conn.GetState() == STATE_DETACHED {
+		return nil
 	}
 
+	err := self.handle(conn)
+	if err != nil {
+		self.CleanHoge(conn)
+		if _, ok := err.(*DisconnectError); !ok {
+			if conn.HasWillMessage() {
+				log.Debug("Okay, Send Will Message")
+				self.SendWillMessage(conn)
+			}
+		}
+	}
 	return err
 }
 
@@ -216,8 +270,7 @@ func (self *Pidgey) handle(conn Connection) error {
 
 	case codec.PACKET_TYPE_PUBLISH:
 		p := msg.(*codec.PublishMessage)
-		log.Debug("Received Publish Message: %+v", p)
-		log.Debug("message: %s", string(p.Payload))
+		log.Debug("Received Publish Message[%s] : %+v", conn.GetId(), p)
 
 		if !self.HasTopic(p.TopicName) {
 			self.CreateTopic(p.TopicName)
@@ -227,12 +280,12 @@ func (self *Pidgey) handle(conn Connection) error {
 			ack := codec.NewPubackMessage()
 			ack.PacketIdentifier = p.PacketIdentifier
 			conn.WriteMessageQueue(ack)
-			log.Debug("Send puback message to sender.")
+			log.Debug("Send puback message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
 		} else if p.QosLevel == 2 {
 			ack := codec.NewPubrecMessage()
 			ack.PacketIdentifier = p.PacketIdentifier
 			conn.WriteMessageQueue(ack)
-			log.Debug("Send pubrec message to sender.")
+			log.Debug("Send pubrec message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
 		}
 
 		// TODO: QoSによっては適切なMessageIDを追加する
@@ -249,7 +302,7 @@ func (self *Pidgey) handle(conn Connection) error {
 
 	case codec.PACKET_TYPE_PUBACK:
 		p := msg.(*codec.PubackMessage)
-		log.Debug("Received Puback Message: %+v", p)
+		log.Debug("Received Puback Message from [%s: %d]", conn.GetId(), p.PacketIdentifier)
 
 		// TODO: これのIDは内部的なの？
 		self.OutGoingTable.Unref(p.PacketIdentifier)
@@ -261,30 +314,30 @@ func (self *Pidgey) handle(conn Connection) error {
 
 	case codec.PACKET_TYPE_PUBREC:
 		p := msg.(*codec.PubrecMessage)
-		log.Debug("Received Pubrec Message: %+v", p)
+		log.Debug("Received Pubrec Message from [%s: %d]", conn.GetId(), p.PacketIdentifier)
 		ack := codec.NewPubrelMessage()
 		ack.PacketIdentifier = p.PacketIdentifier
 		conn.WriteMessageQueue(ack)
 		break
 
 	case codec.PACKET_TYPE_PUBREL:
-		log.Debug("Received Pubrel Message: %+v", msg)
 		p := msg.(*codec.PubrelMessage)
+		log.Debug("Received Pubrel Message: [%s: %d]", conn.GetId(), p.PacketIdentifier)
 		ack := codec.NewPubcompMessage()
 		ack.PacketIdentifier = p.PacketIdentifier
 		conn.WriteMessageQueue(ack)
-		log.Debug("Send pubcomp message to sender.")
+		log.Debug("Send pubcomp message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
 		break
 
 	case codec.PACKET_TYPE_PUBCOMP:
-		log.Debug("Received Pubcomp Message: %+v", msg)
+		log.Debug("Received Pubcomp Message from %s: %+v", conn.GetId(), msg)
 		p := msg.(*codec.PubcompMessage)
 		self.OutGoingTable.Unref(p.PacketIdentifier)
 		break
 
 	case codec.PACKET_TYPE_SUBSCRIBE:
 		p := msg.(*codec.SubscribeMessage)
-		log.Debug("Subscribe Message: %+v\n", p)
+		log.Debug("Subscribe Message: [%s] %+v\n", conn.GetId(), p)
 
 		ack := codec.NewSubackMessage()
 		ack.PacketIdentifier = p.PacketIdentifier
@@ -292,10 +345,19 @@ func (self *Pidgey) handle(conn Connection) error {
 		for _, payload := range p.Payload {
 			var topic *Topic
 
+			// don't subscribe multiple time
+			if _, exists := self.SubscribeMap[conn.GetId()]; exists {
+				log.Debug("Map exists. [%s:%s]", conn.GetId(), payload.TopicPath)
+				continue
+			}
+
+			self.SubscribeMap[conn.GetId()] = payload.TopicPath
+
 			self.Qlobber.Add(payload.TopicPath, conn)
 			conn.AppendSubscribedTopic(payload.TopicPath)
 
-			// TODO: これはAtomicにさせたいなー、とおもったり
+			// TODO: これはAtomicにさせたいなー、とおもったり。
+			// というかTopicは実装上もうつかってないので消していいや
 			if !self.HasTopic(payload.TopicPath) {
 				topic, _ = self.CreateTopic(payload.TopicPath)
 			} else {
@@ -303,7 +365,6 @@ func (self *Pidgey) handle(conn Connection) error {
 			}
 
 			retaines := self.RetainMatch(payload.TopicPath)
-			log.Debug("retaines: %+v\n", retaines)
 			if len(retaines) > 0 {
 				log.Debug("Publish Retained message: %+v", topic.Retain)
 
@@ -322,10 +383,9 @@ func (self *Pidgey) handle(conn Connection) error {
 				}
 			}
 		}
-		log.Debug("Send Suback Message")
+		log.Debug("Send Suback Message To: %s", conn.GetId())
 		conn.WriteMessageQueue(ack)
 
-		log.Debug("Fanout Retained messages: %d", len(retained))
 		for i := range retained {
 			conn.WriteMessage(retained[i])
 		}
@@ -333,7 +393,7 @@ func (self *Pidgey) handle(conn Connection) error {
 
 	case codec.PACKET_TYPE_UNSUBSCRIBE:
 		p := msg.(*codec.UnsubscribeMessage)
-		log.Debug("Received unsubscribe: %+v\n", p)
+		log.Debug("Received unsubscribe from [%s]: %+v\n", conn.GetId(), p)
 		for _, payload := range p.Payload {
 			log.Debug("sent Unsuback message")
 
@@ -351,11 +411,11 @@ func (self *Pidgey) handle(conn Connection) error {
 		break
 
 	case codec.PACKET_TYPE_DISCONNECT:
-		return errors.New("Received Disconnect request: Closed")
+		log.Debug("Received disconnect from %s", conn.GetId())
+		return &DisconnectError{}
 	default:
-		fmt.Printf("Not supported: %d\n", msg.GetType())
-		// MEMO: これは接続切ってもいんじゃね？
-		break
+		fmt.Printf("2Not supported: %d\n", msg.GetType())
+		return errors.New("Invalid protocol sequence")
 	}
 
 	return nil
@@ -368,10 +428,9 @@ func (self *Pidgey) RetainMatch(topic string) []*codec.PublishMessage {
 	topic = strings.Replace(topic, "+", "[^/]+", -1)
 	topic = strings.Replace(topic, "#", ".*", -1)
 
-	fmt.Printf("topic: %s\n", topic)
 	reg, err := regexp.Compile(topic)
 	if err != nil {
-		fmt.Printf("Error: %s", err)
+		fmt.Printf("Regexp Error: %s", err)
 	}
 
 	for k, v := range self.Retain {

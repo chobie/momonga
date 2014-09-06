@@ -523,6 +523,7 @@ func (self *Connection) HasConnection() bool {
 
 func (self *Connection) ParseMessage() (codec.Message, error) {
 	message, err := codec.ParseMessage(self.Connection)
+
 	if err == nil {
 		self.ProcessQueue <- message
 	} else {

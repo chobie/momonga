@@ -13,7 +13,7 @@ type ConnectMessage struct {
 	Version      uint8
 	Flag         uint8
 	KeepAlive    uint16
-	PacketIdentifier   string
+	Identifier   string
 	Will         *WillMessage
 	CleanSession bool
 	UserName     string
@@ -51,12 +51,12 @@ func (self *ConnectMessage) encode() ([]byte, int, error) {
 	size += 1 + 1 + 2
 
 	var Length uint16 = 0
-	if self.PacketIdentifier != "" {
-		Length = uint16(len(self.PacketIdentifier))
+	if self.Identifier != "" {
+		Length = uint16(len(self.Identifier))
 	}
 	binary.Write(buffer, binary.BigEndian, Length)
 	if Length > 0 {
-		buffer.Write([]byte(self.PacketIdentifier))
+		buffer.Write([]byte(self.Identifier))
 	}
 	size += 2 + int(Length)
 
@@ -109,7 +109,7 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 		if err != nil {
 			fmt.Printf("DAM ERROR")
 		}
-		self.PacketIdentifier = string(vv.Bytes())
+		self.Identifier = string(vv.Bytes())
 	}
 
 	if int(self.Flag) & 0x04 > 0 {
@@ -161,7 +161,7 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 		self.Password = string(vv.Bytes())
 	}
 
-	if int(self.Flag)&0x02 > 0 {
+	if int(self.Flag) & 0x02 > 0 {
 		self.CleanSession = true
 	}
 

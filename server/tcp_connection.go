@@ -7,9 +7,11 @@ import (
 	"time"
 	"github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
-	log "github.com/chobie/momonga/logger"
+	"fmt"
 )
 
+
+// Anonymous(?) connection
 type TcpConnection struct {
 	Socket net.Conn
 	Address net.Addr
@@ -24,6 +26,7 @@ type TcpConnection struct {
 	WriteQueueFlag chan bool
 	Last time.Time
 	KeepaliveInterval int
+	ClearSession bool
 }
 
 func (self *TcpConnection) SetWillMessage(will mqtt.WillMessage) {
@@ -62,7 +65,7 @@ func (self *TcpConnection) ResetState() {
 	self.Buffer.WriteBuffer.Reset()
 }
 
-func NewTcpConnection(socket net.Conn, server Server, yield func(conn Connection, time time.Time)) Connection {
+func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yield func(conn Connection, time time.Time)) Connection {
 	conn := &TcpConnection{
 		Socket: socket,
 		Address: socket.RemoteAddr(),
@@ -73,6 +76,7 @@ func NewTcpConnection(socket net.Conn, server Server, yield func(conn Connection
 		WriteQueueFlag: make(chan bool, 1),
 		KeepaliveInterval: 0,
 		Last: time.Now(),
+		ClearSession: true,
 	}
 
 	readMessage := make([]byte, 0, MAX_REQUEST_SIZE)
@@ -87,14 +91,32 @@ func NewTcpConnection(socket net.Conn, server Server, yield func(conn Connection
 		for {
 			select {
 			case m := <- conn.WriteQueue:
-				log.Debug("Debug: %+v\n", m)
 				data, err :=  mqtt.Encode(m)
 				if err != nil {
 					continue
 				}
-				conn.Write(bytes.NewReader(data))
+
+				fmt.Printf("CLIENT WRITE: %+v\n", m)
+				err = conn.Write(bytes.NewReader(data))
+				if err != nil {
+					fmt.Printf("CLIENT WRITE ERROR\n")
+					// Qos1, Qos2はEngineに戻さないといかんけど配送先とか考えるととても面倒くさい。
+					if v, ok := m.(*mqtt.PublishMessage); ok {
+						switch (v.QosLevel) {
+						case 1, 2:
+							// TODO: これはこれで違うんだよな
+							retry <- &Retryable{
+								Id: conn.GetId(),
+								Payload: m,
+							}
+						}
+					}
+					continue
+				} else {
+					fmt.Printf("CLIENT WRITE SUCCEEDED\n")
+				}
 			case <- conn.WriteQueueFlag:
-				// TODO: なにがしたかったんだっけか
+				// TODO: なにがしたかったんだっけか。ああ、殺したかったんだ
 				return
 			}
 		}
@@ -147,12 +169,10 @@ func (self *TcpConnection) IsAlived() bool {
 //}
 //
 func (self *TcpConnection) ReadMessage() (mqtt.Message, error) {
-
 	if self.KeepaliveInterval > 0 {
-		self.Socket.SetReadDeadline(self.Last.Add(time.Duration(int(float64(self.KeepaliveInterval) * 1.5)) * time.Second))
+		self.Socket.SetReadDeadline(self.Last.Add(time.Duration(int(float64(self.KeepaliveInterval) * 2)) * time.Second))
 	}
 	result, err := mqtt.ParseMessage(self.Socket)
-
 	self.Last = time.Now()
 	return result, err
 }
@@ -189,10 +209,22 @@ func (self *TcpConnection) Write(reader *bytes.Reader) (error){
 	return nil
 }
 
+func (self *TcpConnection) GetId() string{
+	return self.Socket.RemoteAddr().String()
+}
+
 func (self *TcpConnection) Close() {
 //	log.Debug("[TcpConnection Closed]")
 	self.Socket.Close()
 
 	// TODO
 	//self.Server.RemoveConnection(self)
+}
+
+func (self *TcpConnection) DisableClearSession() {
+	self.ClearSession = false
+}
+
+func (self *TcpConnection) ShouldClearSession() bool {
+	return self.ClearSession
 }
