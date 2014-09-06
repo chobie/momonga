@@ -26,46 +26,28 @@ dev
 
 # Quick Start
 
-momonga_cli
-
 ```
+#momongad
+go get -u github.com/chobie/momonga/momongad
+momongad
+
+#momonga_cli
 go get -u github.com/chobie/momonga/momonga_cli
-#subscribe /debug topic
-momonga_cli sub -t /debug
-
-```
-
-# Dependencies
-
-```
-required:
-code.google.com/p/log4go
-
-optional:
-github.com/chobie/gopsutil
-github.com/BurntSushi/toml
-code.google.com/p/go.net/websocket
+momonga_cli
 ```
 
 # Development
 
 ```
-mkdir -p momonga/src
-cd momonga
+mkdir momonga && cd momonga
 export GOPATH=`pwd`
+go get -u github.com/chobie/momonga/momongad
 
-go get -u gopkg.in/check.v1
-go get -u code.google.com/p/log4go
-go get -u code.google.com/p/go.net/websocket
-go get -u github.com/BurntSushi/toml
-go get -u github.com/chobie/momonga
+# server
+go run src/github.com/chobie/momonga/momongad/momongad.go -config=src/github.com/chobie/momonga/config.toml
 
 # cli
 go build -o momonga_cli src/github.com/chobie/momonga/momonga_cli/momonga_cli.go
-
-# server
-go build -o moomngad src/github.com/chobie/momonga/momongad/momongad.go
-
 ```
 
 # Author
