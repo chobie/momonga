@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/client"
 	"github.com/codegangsta/cli"
 	"io"
@@ -83,8 +84,8 @@ func subscribe(ctx *cli.Context) {
 	}
 
 	c.Connect()
-	c.SetPublishCallback(func(TopicPath string, Payload []byte) {
-		fmt.Printf("%s\n", Payload)
+	c.On("publish", func(message *codec.PublishMessage) {
+		fmt.Printf("msg: %s, %s\n", message.TopicName, message.Payload)
 	})
 	c.Subscribe(topic, qos)
 	c.Loop()
@@ -142,6 +143,7 @@ func main() {
 	app.Action = func(c *cli.Context) {
 		println(app.Usage)
 	}
+
 	app.Commands = []cli.Command{
 		{
 			Name:   "pub",
@@ -156,6 +158,5 @@ func main() {
 			Action: subscribe,
 		},
 	}
-
 	app.Run(os.Args)
 }

@@ -1,0 +1,34 @@
+# momonga-mqtt configuration file (draft)
+# NOTE: Currently, almost configurations aren't implemented yet. Don't rely these!
+
+[server]
+log_file = "stdout"
+log_level = "info"
+pid_file = ""
+
+bind_address = "localhost"
+port = 1883
+max_connections = 100
+socket = ""
+connection_timeout = 10
+
+enable_tls = false
+tls_port = 8883
+cafile = ""
+certfile = ""
+keyfile = ""
+
+	[server.websocket]
+	enabled = false
+	port = 8080
+
+[engine]
+allow_anonymous = true
+allow_duplicate_messages = true
+max_inflight_messages = 1000
+max_queued_messages = 1000
+retry_interval = 100
+queue_qos0_messages = true
+retained_persistence = true
+persistence = ""
+message_size_limit = 8192

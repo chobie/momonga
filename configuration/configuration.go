@@ -14,13 +14,20 @@ type Server struct {
 	LogFile  string   `toml:"log_file"`
 	LogLevel string   `toml:"log_level"`
 	PidFile  string   `toml:"pid_file"`
+	BindAddress string `toml:"bind_address"`
+	Port int `toml:"port"`
+	Socket string `toml:"socket"`
 }
 
 func LoadConfiguration(configFile string) (*Config, error) {
-	config := &Config{Server: Server{
-		LogFile:  "stdout",
-		LogLevel: "debug",
-		PidFile:  "",
+	config := &Config{
+		Server: Server{
+			LogFile:  "stderr",
+			LogLevel: "info",
+			PidFile:  "",
+			BindAddress: "localhost",
+			Port: 1883,
+			Socket: "",
 		},
 	}
 

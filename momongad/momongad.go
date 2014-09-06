@@ -1,21 +1,49 @@
 package main
 
 import (
+	"flag"
+	"github.com/chobie/momonga/util"
 	"github.com/chobie/momonga/server"
-	"github.com/chobie/momonga/logger"
+	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/configuration"
-	"fmt"
+	"os"
+	"strconv"
+	"io/ioutil"
+	"runtime"
 )
 
 func main() {
-	logger.SetupLogging("debug", "stdout")
+	foreGround := flag.Bool("foreground", true, "run as foreground")
+	configFile := flag.String("config", "config.toml", "the config file")
+	pidFile := flag.String("pidfile", "", "the pid file")
+	flag.Parse()
 
-	conf, err := configuration.LoadConfiguration("config.toml")
+	conf, err := configuration.LoadConfiguration(*configFile)
 	if err != nil {
-		fmt.Printf("Error: %+v")
+		log.Error("Can't read config.toml: %s", err)
+	}
+	if *pidFile != "" {
+		conf.Server.PidFile = *pidFile
 	}
 
-	fmt.Printf("Configuration: %+v\n", conf)
+	log.SetupLogging(conf.Server.LogLevel, conf.Server.LogFile)
+	if !*foreGround {
+		err := util.Daemonize(0, 0)
+		if err != 0 {
+			log.Info("fork failed")
+			os.Exit(-1)
+		}
+	}
+
+	if conf.Server.PidFile != "" {
+		pid := strconv.Itoa(os.Getpid())
+		if err := ioutil.WriteFile(conf.Server.PidFile, []byte(pid), 0644); err != nil {
+			panic(err)
+		}
+		util.WritePid(conf.Server.PidFile)
+	}
+
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	svr := server.NewTcpServer()
 	svr.ListenAndServe()
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	codec "github.com/chobie/momonga/encoding/mqtt"
+	"github.com/chobie/momonga/util"
 	"io"
 	"sync"
 	"time"
@@ -22,7 +23,7 @@ type Option struct {
 	WillQos             int
 	UserName            string
 	Password            string
-	Keepalive           int // これ面倒くさいな
+	Keepalive           int // THIS IS REALLY TROBULESOME
 }
 
 type Client struct {
@@ -41,7 +42,7 @@ func NewClient(opt Option) *Client {
 			Magic:   []byte("MQTT"),
 			Version: 4,
 			// Memo: User have to set PacketIdentifier themselves
-			Identifier: "momonga-mqtt",
+			Identifier: "momongacli",
 			Keepalive:  10,
 		},
 		Connection: NewConnection(),
@@ -57,10 +58,12 @@ func NewClient(opt Option) *Client {
 		opt.Version = client.Option.Version
 	}
 	if len(opt.Identifier) < 1 {
-		opt.Identifier = client.Option.Identifier
+		// generate random string
+		suffix := util.GenerateId(23 - (len(client.Option.Identifier)+1))
+		opt.Identifier = fmt.Sprintf("%s-%s", client.Option.Identifier, suffix)
 	}
 
-	// TODO: provide defaultOption function.
+	// TODO: should provide defaultOption function.
 	client.Option = opt
 	client.Connection.Keepalive = opt.Keepalive
 	return client
@@ -162,7 +165,7 @@ func (self *Client) Loop() {
 		}
 	}
 
-	// TODO: エラーをたんたんと流してくれる人。どーゆーinterfaceにしよっかなー
+	// TODO: consider interface. for now, just print it.
 	go func() {
 		for {
 			select {

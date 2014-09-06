@@ -127,8 +127,10 @@ func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yie
 
 func (self *TcpConnection) GetSubscribedTopicQos(topic string) int {
 	v := self.Qlobber.Match(topic)
-	if r, ok := v[0].(int); ok {
-		return r;
+	if len(v) > 0 {
+		if r, ok := v[0].(int); ok {
+			return r;
+		}
 	}
 	return -1
 //	if qos, ok := self.SubscribedTopics[topic]; ok {
