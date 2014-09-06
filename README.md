@@ -1,6 +1,8 @@
 Momonga MQTT
 ============
 
+![momonga gopher](http://i.imgur.com/Jbo9Gl8.png)
+
 # About
 
 Momonga is a Golang MQTT library
