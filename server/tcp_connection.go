@@ -101,10 +101,8 @@ func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yie
 					continue
 				}
 
-				fmt.Printf("CLIENT WRITE: %+v\n", m)
 				err = conn.Write(bytes.NewReader(data))
 				if err != nil {
-					fmt.Printf("CLIENT WRITE ERROR\n")
 					// Qos1, Qos2はEngineに戻さないといかんけど配送先とか考えるととても面倒くさい。
 					if v, ok := m.(*mqtt.PublishMessage); ok {
 						switch (v.QosLevel) {
@@ -117,8 +115,6 @@ func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yie
 						}
 					}
 					continue
-				} else {
-					fmt.Printf("CLIENT WRITE SUCCEEDED\n")
 				}
 			case <- conn.WriteQueueFlag:
 				// TODO: なにがしたかったんだっけか。ああ、殺したかったんだ

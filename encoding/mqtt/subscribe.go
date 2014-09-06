@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
-
-	"fmt"
 )
 
 type SubscribePayload struct {
@@ -53,9 +51,7 @@ func (self *SubscribeMessage) decode(reader io.Reader) error {
 
 		_, _ = io.CopyN(buffer, reader, int64(length))
 		m.TopicPath = string(buffer.Bytes())
-		// TODO: これ実装まちがってね？
 		binary.Read(reader, binary.BigEndian, &m.RequestedQos)
-		fmt.Printf(" === requested qos %d\n", m.RequestedQos)
 		self.Payload = append(self.Payload, m)
 
 		buffer.Reset()

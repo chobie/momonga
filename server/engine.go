@@ -100,18 +100,18 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 	if !(string(p.Magic) == "MQTT" || string(p.Magic) == "MQIsdp") {
 		return nil, errors.New("Invalid protocol")
 	}
-	log.Debug("CONNECT [%s]: %+v", conn.GetId(), conn)
+
+	//log.Debug("CONNECT [%s]: %+v", conn.GetId(), conn)
 	// TODO: version check
-	for _, v := range self.Connections {
-		log.Debug("  Connection: %s", v.GetId())
-	}
+//	for _, v := range self.Connections {
+//		log.Debug("  Connection: %s", v.GetId())
+//	}
 
 
-	// TODO: 認証部分をつける
+	// TODO: implement authenticator
 
 	// preserve messagen when will flag set
 	if (p.Flag & 0x4) > 0 {
-		log.Debug("This message has Will flag: %+v\n", p.Will)
 		conn.SetWillMessage(*p.Will)
 	}
 
@@ -149,11 +149,10 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 	} else {
 		// Sessionを継続させる
 		tbl := mux.GetOutGoingTable()
-		//TODO: check qos1, 2 message and resend to this client.
-		log.Debug("Hash: %d", len(tbl.Hash))
 
 		for _, c := range tbl.Hash {
 			msgs := make([]codec.Message, 0)
+			//check qos1, 2 message and resend to this client.
 			if v, ok := c.Message.(*codec.PublishMessage); ok {
 				if v.QosLevel > 0 {
 					//mux.WriteMessageQueue(c.Message)
@@ -161,9 +160,9 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 				}
 			}
 			tbl.Clean()
+
 			// ここはもうちっと真面目に消さないといけない
 			for _, v := range msgs {
-				log.Debug("  message: %+v\n", v)
 				mux.WriteMessageQueue(v)
 			}
 		}
@@ -194,7 +193,7 @@ func (self *Pidgey) Run() {
 			switch (msg.GetType()) {
 			case codec.PACKET_TYPE_PUBLISH:
 				m := msg.(*codec.PublishMessage)
-				log.Debug("sending PUBLISH [id:%s, lvl:%d]", m.PacketIdentifier, m.QosLevel)
+				log.Debug("sending PUBLISH [id:%d, lvl:%d]", m.PacketIdentifier, m.QosLevel)
 
 				//topic, err := self.GetTopic(m.TopicName)
 //				if err != nil{
@@ -223,13 +222,11 @@ func (self *Pidgey) Run() {
 					}
 
 					subscriberQos := cn.GetSubscribedTopicQos(m.TopicName)
+
 					// Downgrade QoS
 					if subscriberQos < x.QosLevel {
-						log.Debug("===Downgrade QoS %d > %d", x.QosLevel, subscriberQos)
 						x.QosLevel = subscriberQos
-						// client側はtopic filterで持ってるから単純にはqosわかんねーんだよな
 					}
-
 					if x.QosLevel > 0 {
 						// TODO: ClientごとにInflightTableを持つ
 						// engineのOutGoingTableなのはとりあえず、ということ
@@ -296,7 +293,7 @@ func (self *Pidgey) HandleRequest(conn Connection) error {
 func (self *Pidgey) handle(conn Connection) error {
 	msg, err := conn.ReadMessage()
 	if err != nil {
-		log.Debug("Error: %s", err)
+		log.Error("%s", err)
 		return err
 	}
 
@@ -305,7 +302,7 @@ func (self *Pidgey) handle(conn Connection) error {
 
 	case codec.PACKET_TYPE_PUBLISH:
 		p := msg.(*codec.PublishMessage)
-		log.Debug("Received Publish Message[%s] : %+v", conn.GetId(), p)
+		//log.Debug("Received Publish Message[%s] : %+v", conn.GetId(), p)
 
 		if !self.HasTopic(p.TopicName) {
 			self.CreateTopic(p.TopicName)
@@ -315,12 +312,12 @@ func (self *Pidgey) handle(conn Connection) error {
 			ack := codec.NewPubackMessage()
 			ack.PacketIdentifier = p.PacketIdentifier
 			conn.WriteMessageQueue(ack)
-			log.Debug("Send puback message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
+			//log.Debug("Send puback message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
 		} else if p.QosLevel == 2 {
 			ack := codec.NewPubrecMessage()
 			ack.PacketIdentifier = p.PacketIdentifier
 			conn.WriteMessageQueue(ack)
-			log.Debug("Send pubrec message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
+			//log.Debug("Send pubrec message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
 		}
 
 		// TODO: QoSによっては適切なMessageIDを追加する
@@ -341,7 +338,7 @@ func (self *Pidgey) handle(conn Connection) error {
 	case codec.PACKET_TYPE_PUBACK:
 		//pubackを受け取る、ということはserverがsender
 		p := msg.(*codec.PubackMessage)
-		log.Debug("Received Puback Message from [%s: %d]", conn.GetId(), p.PacketIdentifier)
+		//log.Debug("Received Puback Message from [%s: %d]", conn.GetId(), p.PacketIdentifier)
 
 		// TODO: これのIDは内部的なの？
 		self.OutGoingTable.Unref(p.PacketIdentifier)
@@ -355,7 +352,8 @@ func (self *Pidgey) handle(conn Connection) error {
 	case codec.PACKET_TYPE_PUBREC:
 		//pubrecを受け取る、ということはserverがsender
 		p := msg.(*codec.PubrecMessage)
-		log.Debug("Received Pubrec Message from [%s: %d]", conn.GetId(), p.PacketIdentifier)
+		//log.Debug("Received Pubrec Message from [%s: %d]", conn.GetId(), p.PacketIdentifier)
+
 		ack := codec.NewPubrelMessage()
 		ack.PacketIdentifier = p.PacketIdentifier
 		conn.WriteMessageQueue(ack)
@@ -366,11 +364,12 @@ func (self *Pidgey) handle(conn Connection) error {
 	case codec.PACKET_TYPE_PUBREL:
 		//pubrelを受け取る、ということはserverがreceiver
 		p := msg.(*codec.PubrelMessage)
-		log.Debug("Received Pubrel Message: [%s: %d]", conn.GetId(), p.PacketIdentifier)
+		//log.Debug("Received Pubrel Message: [%s: %d]", conn.GetId(), p.PacketIdentifier)
+
 		ack := codec.NewPubcompMessage()
 		ack.PacketIdentifier = p.PacketIdentifier
 		conn.WriteMessageQueue(ack)
-		log.Debug("Send pubcomp message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
+		//log.Debug("Send pubcomp message to sender. [%s: %d]", conn.GetId(), ack.PacketIdentifier)
 		break
 
 	case codec.PACKET_TYPE_PUBCOMP:

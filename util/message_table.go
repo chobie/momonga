@@ -4,7 +4,6 @@ import (
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"time"
 	"errors"
-	"fmt"
 )
 
 type MessageContainer struct {
@@ -54,7 +53,6 @@ func (self *MessageTable) Get(id uint16) (codec.Message, error) {
 
 
 func (self *MessageTable) Register(id uint16, message codec.Message, opaque interface{}) {
-	fmt.Printf("Register: %d 1\n", id)
 	self.Hash[id] = &MessageContainer{
 		Message: message,
 		Refcount: 1,
@@ -65,7 +63,6 @@ func (self *MessageTable) Register(id uint16, message codec.Message, opaque inte
 }
 
 func (self *MessageTable) Register2(id uint16, message codec.Message, count int, opaque interface{}) {
-	fmt.Printf("Register2: %d %d\n", id, count)
 	self.Hash[id] = &MessageContainer{
 		Message: message,
 		Refcount: count,
@@ -79,10 +76,7 @@ func (self *MessageTable) Unref(id uint16) {
 	if v, ok := self.Hash[id]; ok {
 		v.Refcount--
 
-		fmt.Printf("Hash[%d] = %d\n", id, v.Refcount)
-
 		if v.Refcount < 1 {
-			fmt.Printf("  Hash[%d] is deleted\n", id)
 			if self.OnFinish != nil {
 				self.OnFinish(id, self.Hash[id].Message, self.Hash[id].Opaque)
 			}

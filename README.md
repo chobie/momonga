@@ -54,6 +54,7 @@ mkdir -p momonga/src
 cd momonga
 export GOPATH=`pwd`
 
+go get -u gopkg.in/check.v1
 go get -u code.google.com/p/log4go
 go get -u code.google.com/p/go.net/websocket
 go get -u github.com/BurntSushi/toml

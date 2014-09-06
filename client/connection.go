@@ -196,14 +196,23 @@ func NewConnection() *Connection {
 
 				b2, _ := codec.Encode(msg)
 				if c.GetConnectionState() == CONNECTION_STATE_CONNECTED {
-					c.Balancer.Execute(func() {
+					if c.Balancer.PerSec < 1 {
 						_, err := c.Connection.Write(b2)
 						if err != nil {
 							if v, ok := c.Events["error"].(func(error)); ok {
 								v(err)
 							}
 						}
-					})
+					} else {
+						c.Balancer.Execute(func() {
+							_, err := c.Connection.Write(b2)
+							if err != nil {
+								if v, ok := c.Events["error"].(func(error)); ok {
+									v(err)
+								}
+							}
+						})
+					}
 					c.invalidateTimer()
 				} else {
 					c.OfflineQueue = append(c.OfflineQueue, msg)

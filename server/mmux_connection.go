@@ -3,7 +3,6 @@ package server
 import(
 	"github.com/chobie/momonga/util"
 	"github.com/chobie/momonga/encoding/mqtt"
-	"fmt"
 	"net"
 	"bytes"
 )
@@ -25,9 +24,6 @@ func NewMmuxConnection() *MmuxConnection {
 		OutGoingTable: util.NewMessageTable(),
 		Connections: map[string]Connection{},
 	}
-	conn.OutGoingTable.SetOnFinish(func(id uint16, msg mqtt.Message, opaque interface{}) {
-		fmt.Printf(">>>>>> packet identifier %d is deleted\n", id)
-	})
 
 	return conn
 }
@@ -46,7 +42,7 @@ func (self *MmuxConnection) Attach(conn Connection) {
 		}
 
 		if len(self.OfflineQueue) > 0 {
-			fmt.Printf("Process Offline Queue: Playback: %d", len(self.OfflineQueue))
+			//fmt.Printf("Process Offline Queue: Playback: %d", len(self.OfflineQueue))
 			for i := 0; i < len(self.OfflineQueue); i++ {
 				self.WriteMessageQueue(self.OfflineQueue[i])
 			}
@@ -206,7 +202,6 @@ func (self *MmuxConnection) GetOutGoingTable() *util.MessageTable {
 
 func (self *MmuxConnection) GetSubscribedTopicQos(topic string) int {
 	if self.PrimaryConnection == nil {
-		fmt.Printf("this is dummy connection\n")
 		return 0
 	}
 
