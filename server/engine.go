@@ -32,6 +32,7 @@ type Pidgey struct {
 	SubscribeMap map[string]string
 	RetryMap map[string][]*Retryable
 	ErrorChannel chan *Retryable
+	System System
 }
 
 func (self *Pidgey) HasTopic(Topic string) bool {
@@ -82,6 +83,13 @@ func (self *Pidgey) SetupCallback() {
 			log.Debug("1Not supported; %d", message.GetType())
 		}
 	})
+
+	msg := codec.NewPublishMessage()
+	msg.TopicName = "$SYS/broker/broker/version"
+	msg.Payload = []byte("0.1.0")
+	msg.Retain = 1
+	self.Queue <- msg
+
 }
 
 
@@ -257,6 +265,14 @@ func (self *Pidgey) Run() {
 			break
 		}
 	}
+
+	// maintenance goroutine
+	go func() {
+		for {
+
+			time.Sleep(time.Second)
+		}
+	}()
 }
 
 func (self *Pidgey) CleanHoge(conn Connection) {
@@ -477,6 +493,7 @@ func (self *Pidgey) handle(conn Connection) error {
 // これTrieにしたいんだけどめんどい
 func (self *Pidgey) RetainMatch(topic string) []*codec.PublishMessage {
 	var result []*codec.PublishMessage
+	orig := topic
 
 	topic = strings.Replace(topic, "+", "[^/]+", -1)
 	topic = strings.Replace(topic, "#", ".*", -1)
@@ -486,7 +503,17 @@ func (self *Pidgey) RetainMatch(topic string) []*codec.PublishMessage {
 		fmt.Printf("Regexp Error: %s", err)
 	}
 
+	all := false
+	if string(orig[0:1]) == "#" || string(orig[0:1]) == "+" {
+		all = true
+	}
+
 	for k, v := range self.Retain {
+		if all && (len(k) > 0 && k[0:1] == "$") {
+			// [MQTT-4.7.2-1] The Server MUST NOT match Topic Filters starting with a wildcard character (# or +)
+			// with Topic Names beginning with a $ character
+			continue
+		}
 		if reg.MatchString(k) {
 			result = append(result, v)
 		}
