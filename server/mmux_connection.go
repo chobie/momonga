@@ -204,7 +204,16 @@ func (self *MmuxConnection) GetOutGoingTable() *util.MessageTable {
 //	return self.PrimaryConnection.GetOutGoingTable()
 }
 
-func (self *MmuxConnection) GetSubscribedTopics() []string {
+func (self *MmuxConnection) GetSubscribedTopicQos(topic string) int {
+	if self.PrimaryConnection == nil {
+		fmt.Printf("this is dummy connection\n")
+		return 0
+	}
+
+	return self.PrimaryConnection.GetSubscribedTopicQos(topic)
+}
+
+func (self *MmuxConnection) GetSubscribedTopics() map[string]int {
 	if self.PrimaryConnection == nil {
 		return nil
 	}
@@ -212,12 +221,12 @@ func (self *MmuxConnection) GetSubscribedTopics() []string {
 	return self.PrimaryConnection.GetSubscribedTopics()
 }
 
-func (self *MmuxConnection) AppendSubscribedTopic(topic string) {
+func (self *MmuxConnection) AppendSubscribedTopic(topic string, qos int) {
 	if self.PrimaryConnection == nil {
 		return
 	}
 
-	self.PrimaryConnection.AppendSubscribedTopic(topic)
+	self.PrimaryConnection.AppendSubscribedTopic(topic, qos)
 }
 
 func (self *MmuxConnection) RemoveSubscribedTopic(topic string) {

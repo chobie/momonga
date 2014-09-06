@@ -215,20 +215,32 @@ func (self *Pidgey) Run() {
 				// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
 				log.Debug("TopicName: %s", m.TopicName)
 				targets := self.Qlobber.Match(m.TopicName)
-				if m.QosLevel > 0 {
-					// TODO: ClientごとにInflightTableを持つ
-					// engineのOutGoingTableなのはとりあえず、ということ
-					id := self.OutGoingTable.NewId()
-					m.PacketIdentifier = id
-
-					if sender, ok := m.Opaque.(Connection); ok {
-						self.OutGoingTable.Register2(m.PacketIdentifier, m, len(targets), sender)
-					}
-				}
-
 				for i := range targets {
-					log.Debug("sending publish message to %s [%s %s %d %d]", targets[i].(Connection).GetId(), m.TopicName, m.Payload, m.PacketIdentifier, m.QosLevel)
-					targets[i].(Connection).WriteMessageQueue(m)
+					cn := targets[i].(Connection)
+					x, err := codec.CopyPublishMessage(m)
+					if err != nil {
+						continue
+					}
+
+					subscriberQos := cn.GetSubscribedTopicQos(m.TopicName)
+					// Downgrade QoS
+					if subscriberQos < x.QosLevel {
+						log.Debug("===Downgrade QoS %d > %d", x.QosLevel, subscriberQos)
+						x.QosLevel = subscriberQos
+						// client側はtopic filterで持ってるから単純にはqosわかんねーんだよな
+					}
+
+					if x.QosLevel > 0 {
+						// TODO: ClientごとにInflightTableを持つ
+						// engineのOutGoingTableなのはとりあえず、ということ
+						id := self.OutGoingTable.NewId()
+						x.PacketIdentifier = id
+						if sender, ok := x.Opaque.(Connection); ok {
+							self.OutGoingTable.Register2(x.PacketIdentifier, x, len(targets), sender)
+						}
+					}
+					log.Debug("sending publish message to %s [%s %s %d %d]", targets[i].(Connection).GetId(), x.TopicName, x.Payload, x.PacketIdentifier, x.QosLevel)
+					cn.WriteMessageQueue(x)
 				}
 				break
 			default:
@@ -243,7 +255,7 @@ func (self *Pidgey) Run() {
 }
 
 func (self *Pidgey) CleanHoge(conn Connection) {
-	for _, t := range conn.GetSubscribedTopics() {
+	for t, _ := range conn.GetSubscribedTopics() {
 		if conn.ShouldClearSession() {
 			self.Qlobber.Remove(t, conn)
 		}
@@ -388,7 +400,7 @@ func (self *Pidgey) handle(conn Connection) error {
 			self.SubscribeMap[conn.GetId()] = payload.TopicPath
 
 			self.Qlobber.Add(payload.TopicPath, conn)
-			conn.AppendSubscribedTopic(payload.TopicPath)
+			conn.AppendSubscribedTopic(payload.TopicPath, int(payload.RequestedQos))
 
 			// TODO: これはAtomicにさせたいなー、とおもったり。
 			// というかTopicは実装上もうつかってないので消していいや

@@ -163,6 +163,39 @@ func NewConnackMessage() *ConnackMessage {
 	return message
 }
 
+func CopyPublishMessage(msg *PublishMessage) (*PublishMessage, error) {
+	v, err := CopyMessage(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return v.(*PublishMessage), nil
+}
+
+func CopyMessage(msg Message) (Message, error) {
+	var result Message
+
+	switch (msg.GetType()) {
+	case PACKET_TYPE_PUBLISH:
+		t := msg.(*PublishMessage)
+		c := NewPublishMessage()
+		c.Payload = t.Payload
+		c.TopicName = t.TopicName
+		c.PacketIdentifier = t.PacketIdentifier
+		c.Opaque = t.Opaque
+		c.FixedHeader.Type = t.FixedHeader.Type
+		c.FixedHeader.Dupe = t.FixedHeader.Dupe
+		c.FixedHeader.QosLevel = t.FixedHeader.QosLevel
+		c.FixedHeader.Retain = t.FixedHeader.Retain
+		c.FixedHeader.RemainingLength = t.FixedHeader.RemainingLength
+		result = c
+		break
+	default:
+		return nil, errors.New("hoge")
+	}
+	return result, nil
+}
+
 // TODO: このアホっぽい感じどうにかしたいなー
 // TODO: 読み込んだサイズ返す
 // TODO: サイズ超えてたらエラーなげるの

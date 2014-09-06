@@ -21,12 +21,13 @@ type TcpConnection struct {
 	yield func(conn Connection, time time.Time)
 	WillMessage *mqtt.WillMessage
 	OutGoingTable *util.MessageTable
-	SubscribedTopics []string
+	SubscribedTopics map[string]int
 	WriteQueue chan mqtt.Message
 	WriteQueueFlag chan bool
 	Last time.Time
 	KeepaliveInterval int
 	ClearSession bool
+	Qlobber *util.Qlobber
 }
 
 func (self *TcpConnection) SetWillMessage(will mqtt.WillMessage) {
@@ -77,6 +78,8 @@ func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yie
 		KeepaliveInterval: 0,
 		Last: time.Now(),
 		ClearSession: true,
+		SubscribedTopics: make(map[string]int),
+		Qlobber: util.NewQlobber(),
 	}
 
 	readMessage := make([]byte, 0, MAX_REQUEST_SIZE)
@@ -126,24 +129,33 @@ func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yie
 	return conn
 }
 
-func (self *TcpConnection) GetSubscribedTopics() []string {
+func (self *TcpConnection) GetSubscribedTopicQos(topic string) int {
+	v := self.Qlobber.Match(topic)
+	if r, ok := v[0].(int); ok {
+		return r;
+	}
+	return -1
+//	if qos, ok := self.SubscribedTopics[topic]; ok {
+//		return qos
+//	}
+//	return -1
+}
+
+func (self *TcpConnection) GetSubscribedTopics() map[string]int {
 	return self.SubscribedTopics
 }
 
-func (self *TcpConnection) AppendSubscribedTopic(topic string) {
-	self.SubscribedTopics = append(self.SubscribedTopics, topic)
+func (self *TcpConnection) AppendSubscribedTopic(topic string, qos int) {
+	self.SubscribedTopics[topic] = qos
+	self.Qlobber.Add(topic, qos)
 }
 
 func (self *TcpConnection) RemoveSubscribedTopic(topic string) {
-	offset := -1
-	for i, v := range self.SubscribedTopics {
-		if v == topic {
-			offset = i
-			break
-		}
-	}
+	self.Qlobber.Remove(topic, nil)
 
-	self.SubscribedTopics = append(self.SubscribedTopics[:offset], self.SubscribedTopics[:offset+1]...)
+	if _, ok := self.SubscribedTopics[topic]; ok {
+		delete(self.SubscribedTopics, topic)
+	}
 }
 
 func (self *TcpConnection) GetSocket() net.Conn {

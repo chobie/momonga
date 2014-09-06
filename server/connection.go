@@ -54,8 +54,9 @@ type Connection interface {
 	GetWillMessage() *mqtt.WillMessage
 	HasWillMessage() bool
 	GetOutGoingTable() *util.MessageTable
-	GetSubscribedTopics() []string
-	AppendSubscribedTopic(string)
+	GetSubscribedTopicQos(string) int
+	GetSubscribedTopics() map[string]int
+	AppendSubscribedTopic(string, int)
 	RemoveSubscribedTopic(string)
 	SetKeepaliveInterval(int)
 	GetId() string
