@@ -19,6 +19,15 @@ type Server struct {
 	Socket string `toml:"socket"`
 }
 
+func (self *Config) GetListenAddress() string {
+	return fmt.Sprintf("%s:%d", self.Server.BindAddress, self.Server.Port)
+}
+
+func (self *Config) GetSSLListenAddress() string {
+	// TODO
+	return fmt.Sprintf("%s:8883", self.Server.BindAddress)
+}
+
 func LoadConfiguration(configFile string) (*Config, error) {
 	config := &Config{
 		Server: Server{

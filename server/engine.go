@@ -28,7 +28,6 @@ type Pidgey struct {
 	Qlobber *util.Qlobber
 	// TODO: improve this.
 	Retain map[string]*codec.PublishMessage
-	SessionStore *SessionStore
 	Connections map[string]*MmuxConnection
 	SubscribeMap map[string]string
 	RetryMap map[string][]*Retryable

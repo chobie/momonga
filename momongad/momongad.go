@@ -44,6 +44,6 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	svr := server.NewTcpServer()
+	svr := server.NewTcpServer(conf)
 	svr.ListenAndServe()
 }

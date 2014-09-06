@@ -3,13 +3,14 @@ package server
 import (
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
+	"github.com/chobie/momonga/configuration"
 )
 
 const KILOBYTE = 1024
 const MEGABYTE = 1024 * KILOBYTE
 const MAX_REQUEST_SIZE = MEGABYTE * 2
 
-func NewTcpServer() *TcpServer{
+func NewTcpServer(conf *configuration.Config) *TcpServer{
 	server := &TcpServer{
 		forceSSLUsers: map[string]bool{},
 		Connections: map[string]Connection{},
@@ -19,7 +20,6 @@ func NewTcpServer() *TcpServer{
 			OutGoingTable: util.NewMessageTable(),
 			Qlobber: util.NewQlobber(),
 			Retain: map[string]*codec.PublishMessage{},
-			SessionStore: NewSessionStore(),
 			Connections: map[string]*MmuxConnection{},
 			SubscribeMap: map[string]string{},
 			RetryMap: map[string][]*Retryable{},
@@ -27,8 +27,8 @@ func NewTcpServer() *TcpServer{
 		},
 	}
 	server.Engine.SetupCallback()
-	server.listenAddress = "0.0.0.0:1883"
-	server.SSLlistenAddress = "0.0.0.0:8883"
+	server.listenAddress = conf.GetListenAddress()
+	server.SSLlistenAddress = conf.GetSSLListenAddress()
 
 // TODO: Unix Socket
 	//server.listenSocket = "/tmp/hoge.sock"//config.TcpInputSocketString()
