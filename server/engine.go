@@ -230,6 +230,12 @@ func (self *Pidgey) Run() {
 				// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
 				log.Debug("TopicName: %s", m.TopicName)
 				targets := self.Qlobber.Match(m.TopicName)
+
+				if m.TopicName[0:1] == "#" {
+					// TODO:  [MQTT-4.7.2-1] The Server MUST NOT match Topic Filters starting with a wildcard character
+					// (# or +) with Topic Names beginning with a $ character
+				}
+
 				for i := range targets {
 					cn := targets[i].(Connection)
 					x, err := codec.CopyPublishMessage(m)

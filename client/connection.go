@@ -192,24 +192,44 @@ func NewConnection() *Connection {
 						sb.PacketIdentifier = id
 						c.InflightTable.Register(id, sb, nil)
 					}
+
+//					if v, ok := c.Events["publish"]; ok {
+//						if cb, ok := v.(func(*codec.PublishMessage)); ok {
+//							cb(sb)
+//						} else {
+//						}
+//					}
+
 				}
 
 				b2, _ := codec.Encode(msg)
 				if c.GetConnectionState() == CONNECTION_STATE_CONNECTED {
+					remaining := len(b2)
+					offset := 0
+
 					if c.Balancer.PerSec < 1 {
-						_, err := c.Connection.Write(b2)
-						if err != nil {
-							if v, ok := c.Events["error"].(func(error)); ok {
-								v(err)
+						for offset < remaining {
+							write, err := c.Connection.Write(b2[offset:])
+							if err != nil {
+								panic(fmt.Sprintf("Error: %s", err))
+								if v, ok := c.Events["error"].(func(error)); ok {
+									v(err)
+									break
+								}
 							}
+							offset += write
 						}
 					} else {
 						c.Balancer.Execute(func() {
-							_, err := c.Connection.Write(b2)
-							if err != nil {
-								if v, ok := c.Events["error"].(func(error)); ok {
-									v(err)
+							for offset < remaining {
+								write, err := c.Connection.Write(b2)
+								if err != nil {
+									panic(fmt.Sprintf("Error: %s", err))
+									if v, ok := c.Events["error"].(func(error)); ok {
+										v(err)
+									}
 								}
+								offset += write
 							}
 						})
 					}

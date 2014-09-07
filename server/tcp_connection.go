@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-
+// TODO: use client/connection. it's easy to extend.
 // Anonymous(?) connection
 type TcpConnection struct {
 	Socket net.Conn
