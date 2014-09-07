@@ -1,5 +1,6 @@
 package server
 
+// NOTE: $SYS structures
 type System struct {
 	Broker SystemBroker
 }

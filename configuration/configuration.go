@@ -17,6 +17,7 @@ type Server struct {
 	BindAddress string `toml:"bind_address"`
 	Port int `toml:"port"`
 	Socket string `toml:"socket"`
+	EnableSys bool `toml:"enable_sys"`
 }
 
 func (self *Config) GetListenAddress() string {
@@ -46,6 +47,7 @@ func LoadConfiguration(configFile string) (*Config, error) {
 			BindAddress: "localhost",
 			Port: 1883,
 			Socket: "",
+			EnableSys: true,
 		},
 	}
 

@@ -26,10 +26,14 @@ func NewMomongaServer(conf *configuration.Config) (*MomongaServer, error) {
 			ErrorChannel:  make(chan *Retryable, 8192),
 		},
 	}
-	server.Engine.SetupCallback()
 	server.listenAddress = conf.GetListenAddress()
 	server.SSLlistenAddress = conf.GetSSLListenAddress()
 	server.listenSocket = conf.GetSocketAddress()
+	if !conf.Server.EnableSys {
+		server.Engine.DisableSys()
+	}
+
+	server.Engine.SetupCallback()
 
 	// TODO: SSL
 	//	if config.TcpInputUseSSL {

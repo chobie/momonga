@@ -23,6 +23,11 @@ type Retryable struct {
 	Payload interface{}
 }
 
+/*
+goroutine (2)
+	RunMaintenanceThread
+	Run
+ */
 type Momonga struct {
 	Topics        map[string]*Topic
 	Queue         chan codec.Message
@@ -35,6 +40,11 @@ type Momonga struct {
 	RetryMap     map[string][]*Retryable
 	ErrorChannel chan *Retryable
 	System       System
+	EnableSys    bool
+}
+
+func (self *Momonga) DisableSys() {
+	self.EnableSys = false
 }
 
 func (self *Momonga) HasTopic(Topic string) bool {
@@ -87,12 +97,13 @@ func (self *Momonga) SetupCallback() {
 	})
 
 	// For now
-	msg := codec.NewPublishMessage()
-	msg.TopicName = "$SYS/broker/broker/version"
-	msg.Payload = []byte("0.1.0")
-	msg.Retain = 1
-	self.Queue <- msg
-
+	if self.EnableSys {
+		msg := codec.NewPublishMessage()
+		msg.TopicName = "$SYS/broker/broker/version"
+		msg.Payload = []byte("0.1.0")
+		msg.Retain = 1
+		self.Queue <- msg
+	}
 }
 
 func (self *Momonga) handshake(conn Connection) (*MmuxConnection, error) {
@@ -211,15 +222,17 @@ func (self *Momonga) RunMaintenanceThread() {
 func (self *Momonga) Run() {
 	go self.RunMaintenanceThread()
 
+	// TODO: improve this
 	for {
 		select {
 		// this is kind of a Write Queue
 		case msg := <-self.Queue:
 			switch msg.GetType() {
 			case codec.PACKET_TYPE_PUBLISH:
+				// NOTE: ここは単純にdestinationに対して送る、だけにしたい
+
 				m := msg.(*codec.PublishMessage)
 				log.Debug("sending PUBLISH [id:%d, lvl:%d]", m.PacketIdentifier, m.QosLevel)
-
 				// TODO: Have to persist retain message.
 				if m.Retain > 0 {
 					if len(m.Payload) == 0 {
@@ -274,7 +287,6 @@ func (self *Momonga) Run() {
 			break
 		}
 	}
-
 }
 
 func (self *Momonga) CleanSubscription(conn Connection) {
@@ -320,7 +332,7 @@ func (self *Momonga) handle(conn Connection) error {
 		return err
 	}
 
-	// TODO: it woud be better if we can share this with client library. but it's bother me
+	// TODO: it would be better if we can share this with client library. but it's bother me
 	switch msg.GetType() {
 	case codec.PACKET_TYPE_PUBLISH:
 		p := msg.(*codec.PublishMessage)
@@ -343,7 +355,7 @@ func (self *Momonga) handle(conn Connection) error {
 		}
 
 		// TODO: QoSによっては適切なMessageIDを追加する
-		// Server / ClientはそれぞれMessageTableが違うの？
+		// Server / ClientはそれぞれMessageTableが違う
 		if p.QosLevel > 0 {
 			// TODO: と、いうことはメッセージの deep コピーが簡単にできるようにしないとだめ
 			// 色々考えると面倒だけど、ひとまずはフルコピーでやっとこう
@@ -409,8 +421,6 @@ func (self *Momonga) handle(conn Connection) error {
 		ack.PacketIdentifier = p.PacketIdentifier
 		var retained []*codec.PublishMessage
 		for _, payload := range p.Payload {
-			var topic *Topic
-
 			// don't subscribe multiple time
 			if _, exists := self.SubscribeMap[conn.GetId()]; exists {
 				log.Debug("Map exists. [%s:%s]", conn.GetId(), payload.TopicPath)
@@ -422,36 +432,26 @@ func (self *Momonga) handle(conn Connection) error {
 			self.Qlobber.Add(payload.TopicPath, conn)
 			conn.AppendSubscribedTopic(payload.TopicPath, int(payload.RequestedQos))
 
-			// TODO: これはAtomicにさせたいなー、とおもったり。
-			// というかTopicは実装上もうつかってないので消していい
+			// NOTE: We don't use topic for sending any messages. this is for statistic
 			if !self.HasTopic(payload.TopicPath) {
-				topic, _ = self.CreateTopic(payload.TopicPath)
-			} else {
-				topic, _ = self.GetTopic(payload.TopicPath)
+				self.CreateTopic(payload.TopicPath)
 			}
 
 			retaines := self.RetainMatch(payload.TopicPath)
 			if len(retaines) > 0 {
-				log.Debug("Publish Retained message: %+v", topic.Retain)
-
 				for i := range retaines {
-					pp := codec.NewPublishMessage()
 					id := conn.GetOutGoingTable().NewId()
 
+					pp, _ := codec.CopyPublishMessage(retaines[i])
 					pp.PacketIdentifier = id
-					pp.Payload = retaines[i].Payload
-					pp.TopicName = retaines[i].TopicName
-					pp.QosLevel = retaines[i].QosLevel
-					pp.Retain = retaines[i].Retain
-
 					conn.GetOutGoingTable().Register(id, pp, conn)
 					retained = append(retained, pp)
 				}
 			}
 		}
+
 		log.Debug("Send Suback Message To: %s", conn.GetId())
 		conn.WriteMessageQueue(ack)
-
 		for i := range retained {
 			conn.WriteMessage(retained[i])
 		}
@@ -487,7 +487,7 @@ func (self *Momonga) handle(conn Connection) error {
 	return nil
 }
 
-// TODO: implement trie. but regexp works well.
+// TODO: wanna implement trie. but regexp works well.
 func (self *Momonga) RetainMatch(topic string) []*codec.PublishMessage {
 	var result []*codec.PublishMessage
 	orig := topic
@@ -509,6 +509,7 @@ func (self *Momonga) RetainMatch(topic string) []*codec.PublishMessage {
 		if all && (len(k) > 0 && k[0:1] == "$") {
 			// [MQTT-4.7.2-1] The Server MUST NOT match Topic Filters starting with a wildcard character (# or +)
 			// with Topic Names beginning with a $ character
+			// NOTE: Qlobber doesn't support this feature yet
 			continue
 		}
 		if reg.MatchString(k) {

@@ -1,15 +1,13 @@
 package server
 
 import (
-	"github.com/chobie/momonga/encoding/mqtt"
 	"time"
 )
 
-// Topicは一種のQueueっちゅーこと。TopicにQueue持たせるべき?subscribeでWildcardできるからちょっと違うんだよなぁ
+// Topic is a kind of queue. this is just a container. I don't use this for queueing.
 type Topic struct {
 	Level     int
 	Name      string
 	QoS       int
 	CreatedAt time.Time
-	Retain    *mqtt.PublishMessage
 }

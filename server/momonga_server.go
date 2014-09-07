@@ -199,6 +199,7 @@ func (self *MomongaServer) ListenAndServe() {
 		go self.tcpSSLListenAndServe()
 	}
 
+	// TODO: 場所変える
 	http.Handle("/mqtt", websocket.Handler(func(ws *websocket.Conn) {
 		log.Debug("Accept websocket")
 		conn := NewTcpConnection(ws, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
@@ -211,6 +212,7 @@ func (self *MomongaServer) ListenAndServe() {
 	}))
 	go http.ListenAndServe(":9999", nil)
 
+	// TODO: pass concurrency parameter
 	go self.Engine.Run()
 	self.Wakeup <- true
 
