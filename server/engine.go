@@ -313,7 +313,6 @@ func (self *Pidgey) HandleRequest(conn Connection) error {
 func (self *Pidgey) handle(conn Connection) error {
 	msg, err := conn.ReadMessage()
 	if err != nil {
-		log.Error("%s", err)
 		return err
 	}
 
@@ -477,7 +476,7 @@ func (self *Pidgey) handle(conn Connection) error {
 		log.Debug("Received disconnect from %s", conn.GetId())
 		return &DisconnectError{}
 	default:
-		fmt.Printf("2Not supported: %d\n", msg.GetType())
+		log.Error("Received not supported message [%d]. probably invalid sequence", msg.GetType())
 		return errors.New("Invalid protocol sequence")
 	}
 

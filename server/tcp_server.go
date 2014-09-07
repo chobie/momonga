@@ -51,8 +51,16 @@ func (self *TcpServer) HandleConnection(Identifier string) {
 		if err != nil {
 			// Closeとかは必ずここでやる
 			if _, ok := err.(*DisconnectError); !ok {
-				if err != io.EOF {
-					log.Error("Handle Connection Error: [%s] %s", conn.GetId(), err)
+				if nerr, ok := err.(net.Error); ok {
+					if nerr.Timeout() {
+						// Closing connection.
+					} else if nerr.Temporary() {
+						log.Info("Temporary Error: %s", err)
+					}
+				} else if err == io.EOF {
+					// Expected error. Closing connection.
+				} else {
+					log.Error("Handle Connection Error: %s", err)
 				}
 			}
 
