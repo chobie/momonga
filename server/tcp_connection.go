@@ -1,32 +1,32 @@
 package server
 
 import (
-	"net"
 	"bytes"
-	"io"
-	"time"
+	"fmt"
 	"github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
-	"fmt"
+	"io"
+	"net"
+	"time"
 )
 
 // TODO: use client/connection. it's easy to extend.
 // Anonymous(?) connection
 type TcpConnection struct {
-	Socket net.Conn
-	Address net.Addr
-	Connected time.Time
-	State State
-	yield func(conn Connection, time time.Time)
-	WillMessage *mqtt.WillMessage
-	OutGoingTable *util.MessageTable
-	SubscribedTopics map[string]int
-	WriteQueue chan mqtt.Message
-	WriteQueueFlag chan bool
-	Last time.Time
+	Socket            net.Conn
+	Address           net.Addr
+	Connected         time.Time
+	State             State
+	yield             func(conn Connection, time time.Time)
+	WillMessage       *mqtt.WillMessage
+	OutGoingTable     *util.MessageTable
+	SubscribedTopics  map[string]int
+	WriteQueue        chan mqtt.Message
+	WriteQueueFlag    chan bool
+	Last              time.Time
 	KeepaliveInterval int
-	ClearSession bool
-	Qlobber *util.Qlobber
+	ClearSession      bool
+	Qlobber           *util.Qlobber
 }
 
 func (self *TcpConnection) SetWillMessage(will mqtt.WillMessage) {
@@ -37,7 +37,7 @@ func (self *TcpConnection) GetWillMessage() *mqtt.WillMessage {
 	return self.WillMessage
 }
 
-func (self *TcpConnection)HasWillMessage() bool {
+func (self *TcpConnection) HasWillMessage() bool {
 	if self.WillMessage == nil {
 		return false
 	}
@@ -65,25 +65,25 @@ func (self *TcpConnection) ResetState() {
 
 func NewTcpConnection(socket net.Conn, retry chan *Retryable, yield func(conn Connection, time time.Time)) Connection {
 	conn := &TcpConnection{
-		Socket: socket,
-		Address: socket.RemoteAddr(),
-		Connected: time.Now(),
-		yield: yield,
-		OutGoingTable: util.NewMessageTable(),
-		WriteQueue: make(chan mqtt.Message, 8192),
-		WriteQueueFlag: make(chan bool, 1),
+		Socket:            socket,
+		Address:           socket.RemoteAddr(),
+		Connected:         time.Now(),
+		yield:             yield,
+		OutGoingTable:     util.NewMessageTable(),
+		WriteQueue:        make(chan mqtt.Message, 8192),
+		WriteQueueFlag:    make(chan bool, 1),
 		KeepaliveInterval: 0,
-		Last: time.Now(),
-		ClearSession: true,
-		SubscribedTopics: make(map[string]int),
-		Qlobber: util.NewQlobber(),
+		Last:              time.Now(),
+		ClearSession:      true,
+		SubscribedTopics:  make(map[string]int),
+		Qlobber:           util.NewQlobber(),
 	}
 
 	go func() {
 		for {
 			select {
-			case m := <- conn.WriteQueue:
-				data, err :=  mqtt.Encode(m)
+			case m := <-conn.WriteQueue:
+				data, err := mqtt.Encode(m)
 				if err != nil {
 					// まずここでエラーはでないだろう
 					panic(fmt.Sprintf("Unexpected encode error: %s", err))
@@ -94,18 +94,18 @@ func NewTcpConnection(socket net.Conn, retry chan *Retryable, yield func(conn Co
 				if err != nil {
 					// Qos1, Qos2はEngineに戻さないといかんけど配送先とか考えるととても面倒くさい。
 					if v, ok := m.(*mqtt.PublishMessage); ok {
-						switch (v.QosLevel) {
+						switch v.QosLevel {
 						case 1, 2:
 							// TODO: これはこれで違うんだよな。とりあえずおいているだけ
 							retry <- &Retryable{
-								Id: conn.GetId(),
+								Id:      conn.GetId(),
 								Payload: m,
 							}
 						}
 					}
 					continue
 				}
-			case <- conn.WriteQueueFlag:
+			case <-conn.WriteQueueFlag:
 				// TODO: なにがしたかったんだっけか。ああ、殺したかったんだ
 				return
 			}
@@ -118,14 +118,14 @@ func (self *TcpConnection) GetSubscribedTopicQos(topic string) int {
 	v := self.Qlobber.Match(topic)
 	if len(v) > 0 {
 		if r, ok := v[0].(int); ok {
-			return r;
+			return r
 		}
 	}
 	return -1
-//	if qos, ok := self.SubscribedTopics[topic]; ok {
-//		return qos
-//	}
-//	return -1
+	//	if qos, ok := self.SubscribedTopics[topic]; ok {
+	//		return qos
+	//	}
+	//	return -1
 }
 
 func (self *TcpConnection) GetSubscribedTopics() map[string]int {
@@ -170,7 +170,7 @@ func (self *TcpConnection) IsAlived() bool {
 //
 func (self *TcpConnection) ReadMessage() (mqtt.Message, error) {
 	if self.KeepaliveInterval > 0 {
-		self.Socket.SetReadDeadline(self.Last.Add(time.Duration(int(float64(self.KeepaliveInterval) * 2)) * time.Second))
+		self.Socket.SetReadDeadline(self.Last.Add(time.Duration(int(float64(self.KeepaliveInterval)*2)) * time.Second))
 	}
 
 	result, err := mqtt.ParseMessage(self.Socket, 8192)
@@ -182,8 +182,8 @@ func (self *TcpConnection) WriteMessageQueue(request mqtt.Message) {
 	self.WriteQueue <- request
 }
 
-func (self *TcpConnection) WriteMessage(msg mqtt.Message) (error){
-	data, err :=  mqtt.Encode(msg)
+func (self *TcpConnection) WriteMessage(msg mqtt.Message) error {
+	data, err := mqtt.Encode(msg)
 	if err != nil {
 		return err
 	}
@@ -193,24 +193,24 @@ func (self *TcpConnection) WriteMessage(msg mqtt.Message) (error){
 	return result
 }
 
-func (self *TcpConnection) Write(reader *bytes.Reader) (error){
+func (self *TcpConnection) Write(reader *bytes.Reader) error {
 	var err error
 
 	// TODO: これどっしよっかなー。
 	//conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	_, err = io.Copy(self.Socket, reader);
+	_, err = io.Copy(self.Socket, reader)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (self *TcpConnection) GetId() string{
+func (self *TcpConnection) GetId() string {
 	return self.Socket.RemoteAddr().String()
 }
 
 func (self *TcpConnection) Close() {
-//	log.Debug("[TcpConnection Closed]")
+	//	log.Debug("[TcpConnection Closed]")
 	self.Socket.Close()
 
 	// TODO

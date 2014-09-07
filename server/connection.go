@@ -1,10 +1,10 @@
 package server
 
 import (
-	"net"
 	"bytes"
 	"github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
+	"net"
 )
 
 type State int32
@@ -37,7 +37,7 @@ func (e *ConnectionResetError) Error() string {
 }
 
 type Connection interface {
-	WriteMessage(request mqtt.Message) (error)
+	WriteMessage(request mqtt.Message) error
 	WriteMessageQueue(request mqtt.Message)
 	Close()
 	SetState(State)
@@ -48,7 +48,7 @@ type Connection interface {
 	SetSocket(net.Conn)
 	ClearBuffer()
 	GetAddress() net.Addr
-	Write(reader *bytes.Reader) (error)
+	Write(reader *bytes.Reader) error
 	IsAlived() bool
 	SetWillMessage(mqtt.WillMessage)
 	GetWillMessage() *mqtt.WillMessage

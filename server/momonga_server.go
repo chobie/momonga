@@ -1,37 +1,45 @@
 package server
 
 import (
-	"net"
-	"os"
-	"io"
-	"time"
+	"code.google.com/p/go.net/websocket"
 	"crypto/tls"
 	log "github.com/chobie/momonga/logger"
+	"io"
+	"net"
 	"net/http"
-	"code.google.com/p/go.net/websocket"
-//	"github.com/chobie/momonga/encoding/mqtt"
+	"os"
+	"time"
+	//	"github.com/chobie/momonga/encoding/mqtt"
 )
 
-type TcpServer struct {
-	listenAddress  string
-	listenSocket   string
-	SSLlistenAddress  string
-	database       string
-	shutdown       chan bool
-	tlsConfig      *tls.Config
-	forceSSLUsers map[string]bool
+type MomongaServer struct {
+	listenAddress    string
+	listenSocket     string
+	SSLlistenAddress string
+	database         string
+	tlsConfig        *tls.Config
+	forceSSLUsers    map[string]bool
 
 	// remote addr based map (ようはてんぽらり)
-	Connections map[string]Connection
+	Connections     map[string]Connection
 	ConnectionCount int
-	Engine *Pidgey
+	Engine          *Momonga
+	shutdown         chan bool
+	TcpShutdown chan bool
+	UnixShutdown chan bool
+	SSLShutdown chan bool
+	Wakeup chan bool
 }
 
-func (self *TcpServer) SSLAvailable() bool {
+func (self *MomongaServer) Terminate() {
+	self.shutdown <- true
+}
+
+func (self *MomongaServer) SSLAvailable() bool {
 	return true
 }
 
-func (self *TcpServer) HandleConnection(Identifier string) {
+func (self *MomongaServer) HandleConnection(Identifier string) {
 	var conn Connection
 	var ok bool
 
@@ -41,7 +49,7 @@ func (self *TcpServer) HandleConnection(Identifier string) {
 	}
 
 	mux, err := self.Engine.Handshake(conn)
-	if err != nil{
+	if err != nil {
 		log.Debug("Handshake Error: %s", err)
 		return
 	}
@@ -58,7 +66,7 @@ func (self *TcpServer) HandleConnection(Identifier string) {
 						log.Info("Temporary Error: %s", err)
 					}
 				} else if err == io.EOF {
-						// Expected error. Closing connection.
+					// Expected error. Closing connection.
 				} else {
 					log.Error("Handle Connection Error: %s", err)
 				}
@@ -81,34 +89,34 @@ func (self *TcpServer) HandleConnection(Identifier string) {
 	}
 }
 
-func (self *TcpServer) tcpListenAndServe() {
+func (self *MomongaServer) tcpListenAndServe() {
 	var err error
 	var server net.Listener
 
-	log.Debug("TcpServer: Listen at: ", self.listenAddress)
+	log.Debug("MomongaServer: Listen at: ", self.listenAddress)
 	addr, err := net.ResolveTCPAddr("tcp4", self.listenAddress)
 	if err != nil {
-		log.Error("TCPServer: ResolveTCPAddr: ", err)
+		log.Error("MomongaServer: ResolveTCPAddr: ", err)
 		return
 	}
 
 	if self.listenAddress != "" {
 		server, err = net.ListenTCP("tcp", addr)
 		if err != nil {
-			log.Error("TCPServer: Listen: ", err)
+			log.Error("MomongaServer: Listen: ", err)
 			return
 		}
 	}
 	self.acceptLoop(server, nil)
 }
 
-func (self *TcpServer) tcpSSLListenAndServe() {
+func (self *MomongaServer) tcpSSLListenAndServe() {
 	var err error
 	var server net.Listener
 
 	log.Debug("TcpSSLServer: Listen at: ", self.SSLlistenAddress)
 	if err != nil {
-		log.Error("TCPServer: ResolveTCPAddr: ", err)
+		log.Error("MomongaServer: ResolveTCPAddr: ", err)
 		return
 	}
 
@@ -128,8 +136,7 @@ func (self *TcpServer) tcpSSLListenAndServe() {
 	}
 }
 
-
-func (self *TcpServer) acceptLoop(listener net.Listener, yield func()) {
+func (self *MomongaServer) acceptLoop(listener net.Listener, yield func()) {
 	defer func() {
 		listener.Close()
 		// これなんに使ってたんだっけ?
@@ -149,9 +156,9 @@ func (self *TcpServer) acceptLoop(listener net.Listener, yield func()) {
 		}
 
 		conn := NewTcpConnection(client, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
-				log.Debug("Closing Connection")
-				//conn.Close()
-			})
+			log.Debug("Closing Connection")
+			//conn.Close()
+		})
 		self.Connections[conn.GetId()] = conn
 		self.ConnectionCount++
 
@@ -159,7 +166,7 @@ func (self *TcpServer) acceptLoop(listener net.Listener, yield func()) {
 	}
 }
 
-func (self *TcpServer) unixListenAndServe() {
+func (self *MomongaServer) unixListenAndServe() {
 	var err error
 	var server net.Listener
 
@@ -176,16 +183,12 @@ func (self *TcpServer) unixListenAndServe() {
 	})
 }
 
-func (self *TcpServer) RemoveConnection(conn Connection) {
+func (self *MomongaServer) RemoveConnection(conn Connection) {
 	delete(self.Connections, conn.GetId())
 	self.ConnectionCount--
 }
 
-func (self *TcpServer) ListenAndServe() {
-	defer func() {
-		self.shutdown <- true
-	}()
-
+func (self *MomongaServer) ListenAndServe() {
 	if self.listenAddress != "" {
 		go self.tcpListenAndServe()
 	}
@@ -197,17 +200,28 @@ func (self *TcpServer) ListenAndServe() {
 	}
 
 	http.Handle("/mqtt", websocket.Handler(func(ws *websocket.Conn) {
-			log.Debug("Accept websocket")
-			conn := NewTcpConnection(ws, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
-					log.Debug("Closing Connection")
-					//conn.Close()
-				})
-			self.Connections[ws.RemoteAddr().String()] = conn
-			self.ConnectionCount++
-			self.HandleConnection(ws.RemoteAddr().String())
-		}))
+		log.Debug("Accept websocket")
+		conn := NewTcpConnection(ws, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
+			log.Debug("Closing Connection")
+			//conn.Close()
+		})
+		self.Connections[ws.RemoteAddr().String()] = conn
+		self.ConnectionCount++
+		self.HandleConnection(ws.RemoteAddr().String())
+	}))
 	go http.ListenAndServe(":9999", nil)
-	go self.Engine.RunMaintenanceThread()
+
 	go self.Engine.Run()
-	select {}
+	self.Wakeup <- true
+
+	select {
+	case <- self.shutdown:
+		self.SSLShutdown <- true
+		self.TcpShutdown <- true
+		self.UnixShutdown <- true
+		self.Engine.Terminate()
+
+		log.Debug("CLOSED")
+		return
+	}
 }

@@ -1,55 +1,58 @@
 package server
 
 import (
+	"github.com/chobie/momonga/configuration"
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
-	"github.com/chobie/momonga/configuration"
 )
 
 const KILOBYTE = 1024
 const MEGABYTE = 1024 * KILOBYTE
 const MAX_REQUEST_SIZE = MEGABYTE * 2
 
-func NewTcpServer(conf *configuration.Config) *TcpServer{
-	server := &TcpServer{
+func NewMomongaServer(conf *configuration.Config) (*MomongaServer, error) {
+	server := &MomongaServer{
 		forceSSLUsers: map[string]bool{},
-		Connections: map[string]Connection{},
-		Engine: &Pidgey{
-			Topics: map[string]*Topic{},
-			Queue: make(chan codec.Message, 8192),
+		Connections:   map[string]Connection{},
+		Engine: &Momonga{
+			Topics:        map[string]*Topic{},
+			Queue:         make(chan codec.Message, 8192),
 			OutGoingTable: util.NewMessageTable(),
-			Qlobber: util.NewQlobber(),
-			Retain: map[string]*codec.PublishMessage{},
-			Connections: map[string]*MmuxConnection{},
-			SubscribeMap: map[string]string{},
-			RetryMap: map[string][]*Retryable{},
-			ErrorChannel: make(chan *Retryable, 8192),
+			Qlobber:       util.NewQlobber(),
+			Retain:        map[string]*codec.PublishMessage{},
+			Connections:   map[string]*MmuxConnection{},
+			SubscribeMap:  map[string]string{},
+			RetryMap:      map[string][]*Retryable{},
+			ErrorChannel:  make(chan *Retryable, 8192),
 		},
 	}
 	server.Engine.SetupCallback()
 	server.listenAddress = conf.GetListenAddress()
 	server.SSLlistenAddress = conf.GetSSLListenAddress()
+	server.listenSocket = conf.GetSocketAddress()
 
-// TODO: Unix Socket
-	//server.listenSocket = "/tmp/hoge.sock"//config.TcpInputSocketString()
-
-// TODO: SSL
-//	if config.TcpInputUseSSL {
-//		cert, err := tls.LoadX509KeyPair(config.TcpInputSSLCert(), config.TcpInputSSLKey())
-//		if err != nil {
-//			log.Error("tcp server: loadkeys failed. disable ssl feature: %s", err)
-//		} else {
-//			tslConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
-//			tslConfig.Rand = rand.Reader
-//
-//			server.tlsConfig = tslConfig
-//			for _, name := range config.TcpInputForceSSL() {
-//				server.forceSSLUsers[name] = true
-//			}
-//			log.Debug("SSL Config loaded")
-//		}
-//	}
+	// TODO: SSL
+	//	if config.TcpInputUseSSL {
+	//		cert, err := tls.LoadX509KeyPair(config.TcpInputSSLCert(), config.TcpInputSSLKey())
+	//		if err != nil {
+	//			log.Error("tcp server: loadkeys failed. disable ssl feature: %s", err)
+	//		} else {
+	//			tslConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
+	//			tslConfig.Rand = rand.Reader
+	//
+	//			server.tlsConfig = tslConfig
+	//			for _, name := range config.TcpInputForceSSL() {
+	//				server.forceSSLUsers[name] = true
+	//			}
+	//			log.Debug("SSL Config loaded")
+	//		}
+	//	}
 
 	server.shutdown = make(chan bool, 1)
-	return server
+	server.TcpShutdown = make(chan bool, 1)
+	server.SSLShutdown = make(chan bool, 1)
+	server.UnixShutdown = make(chan bool, 1)
+	server.Wakeup = make(chan bool, 1)
+
+	return server, nil
 }

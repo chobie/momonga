@@ -44,6 +44,7 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	svr := server.NewTcpServer(conf)
+	svr, _ := server.NewMomongaServer(conf)
 	svr.ListenAndServe()
+	select{}
 }

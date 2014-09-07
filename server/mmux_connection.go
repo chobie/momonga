@@ -1,28 +1,28 @@
 package server
 
-import(
-	"github.com/chobie/momonga/util"
-	"github.com/chobie/momonga/encoding/mqtt"
-	"net"
+import (
 	"bytes"
+	"github.com/chobie/momonga/encoding/mqtt"
+	"github.com/chobie/momonga/util"
+	"net"
 )
 
 // MQTT Multiplexer Connection
 type MmuxConnection struct {
 	// Primary
 	PrimaryConnection Connection
-	OfflineQueue []mqtt.Message
-	Connections map[string]Connection
-	MaxOfflineQueue int
-	Identifier string
-	CleanSession bool
-	OutGoingTable *util.MessageTable
+	OfflineQueue      []mqtt.Message
+	Connections       map[string]Connection
+	MaxOfflineQueue   int
+	Identifier        string
+	CleanSession      bool
+	OutGoingTable     *util.MessageTable
 }
 
 func NewMmuxConnection() *MmuxConnection {
-	conn := &MmuxConnection {
+	conn := &MmuxConnection{
 		OutGoingTable: util.NewMessageTable(),
-		Connections: map[string]Connection{},
+		Connections:   map[string]Connection{},
 	}
 
 	return conn
@@ -70,7 +70,7 @@ func (self *MmuxConnection) Detach(conn Connection) {
 	}
 }
 
-func (self *MmuxConnection) WriteMessage(request mqtt.Message) (error) {
+func (self *MmuxConnection) WriteMessage(request mqtt.Message) error {
 	if self.PrimaryConnection == nil {
 		return nil
 	}
@@ -152,7 +152,7 @@ func (self *MmuxConnection) GetAddress() net.Addr {
 	return self.PrimaryConnection.GetAddress()
 
 }
-func (self *MmuxConnection) Write(reader *bytes.Reader) (error) {
+func (self *MmuxConnection) Write(reader *bytes.Reader) error {
 	if self.PrimaryConnection == nil {
 		return nil
 	}
@@ -193,11 +193,11 @@ func (self *MmuxConnection) HasWillMessage() bool {
 
 func (self *MmuxConnection) GetOutGoingTable() *util.MessageTable {
 	return self.OutGoingTable
-//	if self.PrimaryConnection == nil {
-//		return nil
-//	}
-//
-//	return self.PrimaryConnection.GetOutGoingTable()
+	//	if self.PrimaryConnection == nil {
+	//		return nil
+	//	}
+	//
+	//	return self.PrimaryConnection.GetOutGoingTable()
 }
 
 func (self *MmuxConnection) GetSubscribedTopicQos(topic string) int {

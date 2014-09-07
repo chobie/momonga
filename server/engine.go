@@ -1,42 +1,43 @@
 package server
 
 import (
-	"time"
 	"errors"
 	"fmt"
-	"io"
-	"strings"
-	"regexp"
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
+	"io"
+	"regexp"
+	"strings"
+	"time"
 )
 
 type DisconnectError struct {
 }
+
 func (e *DisconnectError) Error() string { return "received disconnect message" }
 
 // TODO: haven't used this yet.
 type Retryable struct {
-	Id string
+	Id      string
 	Payload interface{}
 }
 
-type Pidgey struct {
-	Topics map[string]*Topic
-	Queue chan codec.Message
+type Momonga struct {
+	Topics        map[string]*Topic
+	Queue         chan codec.Message
 	OutGoingTable *util.MessageTable
-	Qlobber *util.Qlobber
+	Qlobber       *util.Qlobber
 	// TODO: improve this.
-	Retain map[string]*codec.PublishMessage
-	Connections map[string]*MmuxConnection
+	Retain       map[string]*codec.PublishMessage
+	Connections  map[string]*MmuxConnection
 	SubscribeMap map[string]string
-	RetryMap map[string][]*Retryable
+	RetryMap     map[string][]*Retryable
 	ErrorChannel chan *Retryable
-	System System
+	System       System
 }
 
-func (self *Pidgey) HasTopic(Topic string) bool {
+func (self *Momonga) HasTopic(Topic string) bool {
 	if _, ok := self.Topics[Topic]; ok {
 		return true
 	} else {
@@ -44,37 +45,40 @@ func (self *Pidgey) HasTopic(Topic string) bool {
 	}
 }
 
-func (self *Pidgey) GetTopic(name string) (*Topic, error) {
+func (self *Momonga) Terminate() {
+}
+
+func (self *Momonga) GetTopic(name string) (*Topic, error) {
 	if self.HasTopic(name) {
 		return self.Topics[name], nil
 	}
 	return nil, errors.New(fmt.Sprintf("topic %s does not exiist", name))
 }
 
-func (self *Pidgey) CreateTopic(name string) (*Topic, error) {
+func (self *Momonga) CreateTopic(name string) (*Topic, error) {
 	// TODO: This should be operate atomically
 	self.Topics[name] = &Topic{
-		Name: name,
-		Level: 0,
-		QoS: 0,
+		Name:      name,
+		Level:     0,
+		QoS:       0,
 		CreatedAt: time.Now(),
 	}
 
 	return self.Topics[name], nil
 }
 
-func (self *Pidgey) SetupCallback() {
+func (self *Momonga) SetupCallback() {
 	self.OutGoingTable.SetOnFinish(func(id uint16, message codec.Message, opaque interface{}) {
-		switch (message.GetType()) {
+		switch message.GetType() {
 		case codec.PACKET_TYPE_PUBLISH:
 			p := message.(*codec.PublishMessage)
 			if p.QosLevel == 2 {
 				ack := codec.NewPubcompMessage()
 				ack.PacketIdentifier = p.PacketIdentifier
 				// TODO: WHAAAT? I don't remember this
-//				if conn != nil {
-//					conn.WriteMessageQueue(ack)
-//				}
+				//				if conn != nil {
+				//					conn.WriteMessageQueue(ack)
+				//				}
 			}
 			break
 		default:
@@ -91,8 +95,7 @@ func (self *Pidgey) SetupCallback() {
 
 }
 
-
-func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
+func (self *Momonga) handshake(conn Connection) (*MmuxConnection, error) {
 	msg, err := conn.ReadMessage()
 	if err != nil {
 		return nil, err
@@ -109,10 +112,9 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 
 	//log.Debug("CONNECT [%s]: %+v", conn.GetId(), conn)
 	// TODO: version check
-//	for _, v := range self.Connections {
-//		log.Debug("  Connection: %s", v.GetId())
-//	}
-
+	//	for _, v := range self.Connections {
+	//		log.Debug("  Connection: %s", v.GetId())
+	//	}
 
 	// TODO: implement authenticator
 
@@ -185,7 +187,7 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 	return mux, nil
 }
 
-func (self *Pidgey) Handshake(conn Connection) (*MmuxConnection, error) {
+func (self *Momonga) Handshake(conn Connection) (*MmuxConnection, error) {
 	mux, err := self.handshake(conn)
 
 	if err != nil {
@@ -193,12 +195,12 @@ func (self *Pidgey) Handshake(conn Connection) (*MmuxConnection, error) {
 			msg := codec.NewDisconnectMessage()
 			conn.WriteMessage(msg)
 		}
-		return nil, err;
+		return nil, err
 	}
 	return mux, nil
 }
 
-func (self *Pidgey) RunMaintenanceThread() {
+func (self *Momonga) RunMaintenanceThread() {
 	for {
 		// TODO: implement $SYS here.
 		time.Sleep(time.Second)
@@ -206,12 +208,14 @@ func (self *Pidgey) RunMaintenanceThread() {
 
 }
 
-func (self *Pidgey) Run() {
+func (self *Momonga) Run() {
+	go self.RunMaintenanceThread()
+
 	for {
 		select {
-			// this is kind of a Write Queue
-		case msg := <- self.Queue:
-			switch (msg.GetType()) {
+		// this is kind of a Write Queue
+		case msg := <-self.Queue:
+			switch msg.GetType() {
 			case codec.PACKET_TYPE_PUBLISH:
 				m := msg.(*codec.PublishMessage)
 				log.Debug("sending PUBLISH [id:%d, lvl:%d]", m.PacketIdentifier, m.QosLevel)
@@ -264,7 +268,7 @@ func (self *Pidgey) Run() {
 			default:
 				log.Debug("WHAAAAAT?: %+v", msg)
 			}
-		case r := <- self.ErrorChannel:
+		case r := <-self.ErrorChannel:
 			self.RetryMap[r.Id] = append(self.RetryMap[r.Id], r)
 			log.Debug("ADD RETRYABLE MAP. But we don't do anything")
 			break
@@ -273,7 +277,7 @@ func (self *Pidgey) Run() {
 
 }
 
-func (self *Pidgey) CleanSubscription(conn Connection) {
+func (self *Momonga) CleanSubscription(conn Connection) {
 	for t, _ := range conn.GetSubscribedTopics() {
 		if conn.ShouldClearSession() {
 			self.Qlobber.Remove(t, conn)
@@ -284,7 +288,7 @@ func (self *Pidgey) CleanSubscription(conn Connection) {
 	}
 }
 
-func (self *Pidgey) SendWillMessage(conn Connection) {
+func (self *Momonga) SendWillMessage(conn Connection) {
 	will := conn.GetWillMessage()
 	msg := codec.NewPublishMessage()
 	msg.TopicName = will.Topic
@@ -293,7 +297,7 @@ func (self *Pidgey) SendWillMessage(conn Connection) {
 	self.Queue <- msg
 }
 
-func (self *Pidgey) HandleRequest(conn Connection) error {
+func (self *Momonga) HandleRequest(conn Connection) error {
 	if conn.GetState() == STATE_DETACHED {
 		return nil
 	}
@@ -310,14 +314,14 @@ func (self *Pidgey) HandleRequest(conn Connection) error {
 	return err
 }
 
-func (self *Pidgey) handle(conn Connection) error {
+func (self *Momonga) handle(conn Connection) error {
 	msg, err := conn.ReadMessage()
 	if err != nil {
 		return err
 	}
 
 	// TODO: it woud be better if we can share this with client library. but it's bother me
-	switch (msg.GetType()) {
+	switch msg.GetType() {
 	case codec.PACKET_TYPE_PUBLISH:
 		p := msg.(*codec.PublishMessage)
 		//log.Debug("Received Publish Message[%s] : %+v", conn.GetId(), p)
@@ -341,10 +345,10 @@ func (self *Pidgey) handle(conn Connection) error {
 		// TODO: QoSによっては適切なMessageIDを追加する
 		// Server / ClientはそれぞれMessageTableが違うの？
 		if p.QosLevel > 0 {
-// TODO: と、いうことはメッセージの deep コピーが簡単にできるようにしないとだめ
-// 色々考えると面倒だけど、ひとまずはフルコピーでやっとこう
-//			id := conn.GetOutGoingTable().NewId()
-//			p.PacketIdentifier = id
+			// TODO: と、いうことはメッセージの deep コピーが簡単にできるようにしないとだめ
+			// 色々考えると面倒だけど、ひとまずはフルコピーでやっとこう
+			//			id := conn.GetOutGoingTable().NewId()
+			//			p.PacketIdentifier = id
 			conn.GetOutGoingTable().Register(p.PacketIdentifier, p, conn)
 			p.Opaque = conn
 		}
@@ -484,7 +488,7 @@ func (self *Pidgey) handle(conn Connection) error {
 }
 
 // TODO: implement trie. but regexp works well.
-func (self *Pidgey) RetainMatch(topic string) []*codec.PublishMessage {
+func (self *Momonga) RetainMatch(topic string) []*codec.PublishMessage {
 	var result []*codec.PublishMessage
 	orig := topic
 

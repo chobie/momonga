@@ -5,11 +5,11 @@ type System struct {
 }
 
 type SystemBroker struct {
-	Load SystemBrokerLoad
-	Clients SystemBrokerClients
-	Messages SystemBrokerMessages
+	Load          SystemBrokerLoad
+	Clients       SystemBrokerClients
+	Messages      SystemBrokerMessages
 	Subscriptions SystemBrokerSubscriptions
-	Broker SystemBrokerBroker
+	Broker        SystemBrokerBroker
 }
 
 type SystemBrokerLoad struct {
@@ -18,27 +18,27 @@ type SystemBrokerLoad struct {
 
 type SystemBrokerLoadBytes struct {
 	Received int
-	Sent int
+	Sent     int
 }
 
 type SystemBrokerClients struct {
-	Connected int
+	Connected    int
 	Disconnected int
-	Maximum int
-	Total int
+	Maximum      int
+	Total        int
 }
 
 type SystemBrokerMessages struct {
 	Inflight int
 	Received int
-	Sent int
-	Stored int
-	Publish SystemBrokerMessagesPublish
+	Sent     int
+	Stored   int
+	Publish  SystemBrokerMessagesPublish
 	Retained SystemBrokerMessagesRetained
 }
 
 type SystemBrokerMessagesPublish struct {
-	Sent int
+	Sent  int
 	Count int
 }
 
@@ -50,7 +50,7 @@ type SystemBrokerSubscriptions struct {
 }
 
 type SystemBrokerBroker struct {
-	Time int
-	Uptime int
+	Time    int
+	Uptime  int
 	Version string
 }

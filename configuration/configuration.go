@@ -20,12 +20,21 @@ type Server struct {
 }
 
 func (self *Config) GetListenAddress() string {
+	if self.Server.Port <= 0 {
+		return ""
+	}
 	return fmt.Sprintf("%s:%d", self.Server.BindAddress, self.Server.Port)
 }
 
 func (self *Config) GetSSLListenAddress() string {
-	// TODO
+	if self.Server.Port <= 0 {
+		return ""
+	}
 	return fmt.Sprintf("%s:8883", self.Server.BindAddress)
+}
+
+func (self *Config) GetSocketAddress() string {
+	return self.Server.Socket
 }
 
 func LoadConfiguration(configFile string) (*Config, error) {
@@ -46,7 +55,6 @@ func LoadConfiguration(configFile string) (*Config, error) {
 	}
 
 	if _, err2 := toml.Decode(string(data), config); err != nil {
-		fmt.Printf("string: %s\n", string(data))
 		return config, err2
 	}
 
