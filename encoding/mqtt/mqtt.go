@@ -198,13 +198,16 @@ func CopyMessage(msg Message) (Message, error) {
 
 // TODO: このアホっぽい感じどうにかしたいなー
 // TODO: 読み込んだサイズ返す
-// TODO: サイズ超えてたらエラーなげるの
-func ParseMessage(reader io.Reader) (Message, error) {
+func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 	var message Message
 	header := FixedHeader{}
 	err := header.decode(reader)
 	if err != nil {
 		return nil, err
+	}
+
+	if max_length > 0 && header.RemainingLength > max_length {
+		return nil, errors.New(fmt.Sprintf("Payload exceedes server limit. %d bytes", header.RemainingLength))
 	}
 
 	switch header.GetType() {

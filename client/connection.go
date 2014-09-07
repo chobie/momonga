@@ -178,7 +178,6 @@ func NewConnection() *Connection {
 		fmt.Printf("Error: %s\n", err)
 	}
 
-	// つながった瞬間からConnectedでよい
 	// Write Queue
 	go func() {
 		for {
@@ -203,6 +202,7 @@ func NewConnection() *Connection {
 				}
 
 				b2, _ := codec.Encode(msg)
+
 				if c.GetConnectionState() == CONNECTION_STATE_CONNECTED {
 					remaining := len(b2)
 					offset := 0
@@ -551,7 +551,7 @@ func (self *Connection) HasConnection() bool {
 }
 
 func (self *Connection) ParseMessage() (codec.Message, error) {
-	message, err := codec.ParseMessage(self.Connection)
+	message, err := codec.ParseMessage(self.Connection, 0)
 
 	if err == nil {
 		self.ProcessQueue <- message

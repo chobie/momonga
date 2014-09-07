@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 	"time"
+	"net"
 )
 
 type Option struct {
@@ -147,9 +148,20 @@ func (self *Client) Loop() {
 		case CONNECTION_STATE_CONNECTED:
 			_, err := self.Connection.ParseMessage()
 			if err != nil {
-				if err == io.EOF {
+				if nerr, ok := err.(net.Error); ok {
+					if nerr.Timeout() {
+						// Closing connection.
+						self.ForceClose()
+					} else if nerr.Temporary() {
+						//log.Info("Temporary Error: %s", err)
+						self.ForceClose()
+					} else {
+						fmt.Printf("damepo")
+					}
+				} else if err == io.EOF {
 					self.ForceClose()
-					continue
+				} else if err.Error() == "use of closed network connection" {
+					self.ForceClose()
 				} else {
 					self.Errors <- err
 				}

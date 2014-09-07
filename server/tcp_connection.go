@@ -184,7 +184,8 @@ func (self *TcpConnection) ReadMessage() (mqtt.Message, error) {
 	if self.KeepaliveInterval > 0 {
 		self.Socket.SetReadDeadline(self.Last.Add(time.Duration(int(float64(self.KeepaliveInterval) * 2)) * time.Second))
 	}
-	result, err := mqtt.ParseMessage(self.Socket)
+
+	result, err := mqtt.ParseMessage(self.Socket, 8192)
 	self.Last = time.Now()
 	return result, err
 }
