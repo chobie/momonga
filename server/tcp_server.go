@@ -58,7 +58,7 @@ func (self *TcpServer) HandleConnection(Identifier string) {
 						log.Info("Temporary Error: %s", err)
 					}
 				} else if err == io.EOF {
-					// Expected error. Closing connection.
+						// Expected error. Closing connection.
 				} else {
 					log.Error("Handle Connection Error: %s", err)
 				}
