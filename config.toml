@@ -3,7 +3,7 @@
 
 [server]
 log_file = "stdout"
-log_level = "info"
+log_level = "debug"
 pid_file = ""
 
 bind_address = "localhost"

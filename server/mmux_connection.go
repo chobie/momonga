@@ -1,10 +1,9 @@
 package server
 
 import (
-	"bytes"
+	"fmt"
 	"github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
-	"net"
 )
 
 // MQTT Multiplexer Connection
@@ -42,15 +41,21 @@ func (self *MmuxConnection) Attach(conn Connection) {
 		}
 
 		if len(self.OfflineQueue) > 0 {
-			//fmt.Printf("Process Offline Queue: Playback: %d", len(self.OfflineQueue))
+			fmt.Printf("Process Offline Queue: Playback: %d", len(self.OfflineQueue))
 			for i := 0; i < len(self.OfflineQueue); i++ {
 				self.WriteMessageQueue(self.OfflineQueue[i])
 			}
 			self.OfflineQueue = self.OfflineQueue[:0]
+		} else {
+			fmt.Printf("Offline queue is zero\n")
 		}
 	}
 
-	self.Connections[conn.GetId()] = conn
+	self.Connections[conn.GetRealId()] = conn
+}
+
+func (self *MmuxConnection) GetRealId() string {
+	return self.Identifier
 }
 
 func (self *MmuxConnection) Detach(conn Connection) {
@@ -58,7 +63,8 @@ func (self *MmuxConnection) Detach(conn Connection) {
 		self.PrimaryConnection = nil
 	}
 
-	delete(self.Connections, conn.GetId())
+	v := len(self.Connections)
+	delete(self.Connections, conn.GetRealId())
 
 	if len(self.Connections) == 0 {
 		self.PrimaryConnection = nil
@@ -68,6 +74,7 @@ func (self *MmuxConnection) Detach(conn Connection) {
 			break
 		}
 	}
+	fmt.Printf("detached: %d => %d, %+v\n", v, len(self.Connections), self.PrimaryConnection)
 }
 
 func (self *MmuxConnection) WriteMessage(request mqtt.Message) error {
@@ -79,17 +86,19 @@ func (self *MmuxConnection) WriteMessage(request mqtt.Message) error {
 
 func (self *MmuxConnection) WriteMessageQueue(request mqtt.Message) {
 	if self.PrimaryConnection == nil {
+		fmt.Printf("<DEBUG> APPEND OFFLINE QUEUE\n")
 		self.OfflineQueue = append(self.OfflineQueue, request)
 		return
 	}
+	fmt.Printf("primary %+v\n, len:%d\n", self.PrimaryConnection, len(self.Connections))
 
 	self.PrimaryConnection.WriteMessageQueue(request)
 }
-func (self *MmuxConnection) Close() {
+func (self *MmuxConnection) Close() error {
 	if self.PrimaryConnection == nil {
-		return
+		return nil
 	}
-	self.PrimaryConnection.Close()
+	return self.PrimaryConnection.Close()
 }
 func (self *MmuxConnection) SetState(state State) {
 	if self.PrimaryConnection == nil {
@@ -122,21 +131,13 @@ func (self *MmuxConnection) ReadMessage() (mqtt.Message, error) {
 	return self.PrimaryConnection.ReadMessage()
 }
 
-func (self *MmuxConnection) GetAddress() net.Addr {
-	if self.PrimaryConnection == nil {
-		return nil
-	}
-
-	return self.PrimaryConnection.GetAddress()
-
-}
-func (self *MmuxConnection) Write(reader *bytes.Reader) error {
-	if self.PrimaryConnection == nil {
-		return nil
-	}
-
-	return self.PrimaryConnection.Write(reader)
-}
+//func (self *MmuxConnection) Write(reader *bytes.Reader) error {
+//	if self.PrimaryConnection == nil {
+//		return nil
+//	}
+//
+//	return self.PrimaryConnection.Write(reader)
+//}
 
 func (self *MmuxConnection) IsAlived() bool {
 	if self.PrimaryConnection == nil {
@@ -228,4 +229,7 @@ func (self *MmuxConnection) ShouldClearSession() bool {
 	}
 
 	return self.PrimaryConnection.ShouldClearSession()
+}
+
+func (self *MmuxConnection) SetId(id string) {
 }

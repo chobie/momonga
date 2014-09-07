@@ -27,6 +27,7 @@ type TcpConnection struct {
 	ClearSession      bool
 	Qlobber           *util.Qlobber
 }
+
 /*
 OKだとおもうの
 func (self *TcpConnection) GetState() State {
@@ -247,17 +248,22 @@ func (self *TcpConnection) Write(reader *bytes.Reader) error {
 	return nil
 }
 
+func (self *TcpConnection) GetRealId() string {
+	return self.Socket.RemoteAddr().String()
+}
+
 func (self *TcpConnection) GetId() string {
 	return self.Socket.RemoteAddr().String()
 }
 
-func (self *TcpConnection) Close() {
+func (self *TcpConnection) Close() error {
 	//	log.Debug("[TcpConnection Closed]")
 	self.Socket.Close()
 	self.WriteQueueFlag <- true
 
 	// TODO
 	//self.Server.RemoveConnection(self)
+	return nil
 }
 
 func (self *TcpConnection) DisableClearSession() {
@@ -267,3 +273,7 @@ func (self *TcpConnection) DisableClearSession() {
 func (self *TcpConnection) ShouldClearSession() bool {
 	return self.ClearSession
 }
+
+func (self *TcpConnection) SetId(id string) {
+}
+

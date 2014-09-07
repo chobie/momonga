@@ -447,6 +447,10 @@ func (self *Momonga) RetainMatch(topic string) []*codec.PublishMessage {
 func (self *Momonga) RunMaintenanceThread() {
 	for {
 		// TODO: implement $SYS here.
+//		log.Debug("Current Conn: %d", len(self.Connections))
+//		for i := range self.Connections {
+//			log.Debug("  %+v", self.Connections[i])
+//		}
 		time.Sleep(time.Second)
 	}
 }
@@ -476,7 +480,7 @@ func (self *Momonga) Run() {
 
 				// Publishで受け取ったMessageIdのやつのCountをとっておく
 				// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
-				log.Debug("TopicName: %s", m.TopicName)
+				log.Debug("TopicName: %s %s", m.TopicName, m.Payload)
 				targets := self.Qlobber.Match(m.TopicName)
 
 				if m.TopicName[0:1] == "#" {

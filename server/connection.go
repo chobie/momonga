@@ -1,23 +1,24 @@
 package server
 
 import (
-	"bytes"
 	"github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
-	"net"
 )
 
 type State int32
 
 //   ConnectionState: Idle, Send, Receive and Handshake?
 const (
-	STATE_CONNECTED State = iota
+	STATE_INIT State = iota
+	STATE_CONNECTING
+	STATE_CONNECTED
 	STATE_ACCEPTED
 	STATE_IDLE
 	STATE_DETACHED
 	STATE_SEND
 	STATE_RECEIVE
 	STATE_SHUTDOWN
+	STATE_CLOSED
 )
 
 type ConnectionError struct {
@@ -39,13 +40,11 @@ func (e *ConnectionResetError) Error() string {
 type Connection interface {
 	WriteMessage(request mqtt.Message) error
 	WriteMessageQueue(request mqtt.Message)
-	Close()
+	Close() error
 	SetState(State)
 	GetState() State
 	ResetState()
 	ReadMessage() (mqtt.Message, error)
-	GetAddress() net.Addr
-	Write(reader *bytes.Reader) error
 	IsAlived() bool
 	SetWillMessage(mqtt.WillMessage)
 	GetWillMessage() *mqtt.WillMessage
@@ -57,6 +56,8 @@ type Connection interface {
 	RemoveSubscribedTopic(string)
 	SetKeepaliveInterval(int)
 	GetId() string
+	GetRealId() string
+	SetId(string)
 	DisableClearSession()
 	ShouldClearSession() bool
 }
