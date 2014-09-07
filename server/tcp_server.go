@@ -199,6 +199,7 @@ func (self *TcpServer) ListenAndServe() {
 			self.HandleConnection(ws.RemoteAddr().String())
 		}))
 	go http.ListenAndServe(":9999", nil)
+	go self.Engine.RunMaintenanceThread()
 	go self.Engine.Run()
 	select {}
 }

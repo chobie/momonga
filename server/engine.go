@@ -16,6 +16,7 @@ type DisconnectError struct {
 }
 func (e *DisconnectError) Error() string { return "received disconnect message" }
 
+// TODO: haven't used this yet.
 type Retryable struct {
 	Id string
 	Payload interface{}
@@ -51,7 +52,7 @@ func (self *Pidgey) GetTopic(name string) (*Topic, error) {
 }
 
 func (self *Pidgey) CreateTopic(name string) (*Topic, error) {
-	// TODO: Atomicにしておく
+	// TODO: This should be operate atomically
 	self.Topics[name] = &Topic{
 		Name: name,
 		Level: 0,
@@ -64,16 +65,13 @@ func (self *Pidgey) CreateTopic(name string) (*Topic, error) {
 
 func (self *Pidgey) SetupCallback() {
 	self.OutGoingTable.SetOnFinish(func(id uint16, message codec.Message, opaque interface{}) {
-		// ここでQoS2の処理する？
-		log.Debug("Message: id: %d, %+v", id, message)
-
 		switch (message.GetType()) {
 		case codec.PACKET_TYPE_PUBLISH:
 			p := message.(*codec.PublishMessage)
 			if p.QosLevel == 2 {
 				ack := codec.NewPubcompMessage()
 				ack.PacketIdentifier = p.PacketIdentifier
-				// TODO: あれ、なんだっけこれ？
+				// TODO: WHAAAT? I don't remember this
 //				if conn != nil {
 //					conn.WriteMessageQueue(ack)
 //				}
@@ -84,6 +82,7 @@ func (self *Pidgey) SetupCallback() {
 		}
 	})
 
+	// For now
 	msg := codec.NewPublishMessage()
 	msg.TopicName = "$SYS/broker/broker/version"
 	msg.Payload = []byte("0.1.0")
@@ -156,14 +155,13 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 	self.Connections[mux.GetId()] = mux
 
 	if p.CleanSession {
-		// Retry MapもClear
 		delete(self.RetryMap, mux.GetId())
-		self.CleanHoge(mux)
-		mux.GetOutGoingTable().Clean()
+		self.CleanSubscription(mux)
 
-		// ここだとQos1, 2は消す必要があるのか?
+		// Should I remove remaining QoS1, QoS2 message at this time?
+		mux.GetOutGoingTable().Clean()
 	} else {
-		// Sessionを継続させる
+		// Okay, attach to existing session.
 		tbl := mux.GetOutGoingTable()
 
 		for _, c := range tbl.Hash {
@@ -177,7 +175,7 @@ func (self *Pidgey) handshake(conn Connection) (*MmuxConnection, error) {
 			}
 			tbl.Clean()
 
-			// ここはもうちっと真面目に消さないといけない
+			// TODO: improve this
 			for _, v := range msgs {
 				mux.WriteMessageQueue(v)
 			}
@@ -200,24 +198,25 @@ func (self *Pidgey) Handshake(conn Connection) (*MmuxConnection, error) {
 	return mux, nil
 }
 
+func (self *Pidgey) RunMaintenanceThread() {
+	for {
+		// TODO: implement $SYS here.
+		time.Sleep(time.Second)
+	}
+
+}
+
 func (self *Pidgey) Run() {
 	for {
 		select {
-			// QoSごとにチャンネル持ってると便利？
-			// これはようはWriteQueueってやつだ
+			// this is kind of a Write Queue
 		case msg := <- self.Queue:
 			switch (msg.GetType()) {
 			case codec.PACKET_TYPE_PUBLISH:
 				m := msg.(*codec.PublishMessage)
 				log.Debug("sending PUBLISH [id:%d, lvl:%d]", m.PacketIdentifier, m.QosLevel)
 
-				//topic, err := self.GetTopic(m.TopicName)
-//				if err != nil{
-//					fmt.Printf("err: %s\n", err)
-//					//continue
-//				}
-
-				// TODO: Retainはサーバーが再起動しても保持しなければならない
+				// TODO: Have to persist retain message.
 				if m.Retain > 0 {
 					if len(m.Payload) == 0 {
 						delete(self.Retain, m.TopicName)
@@ -263,25 +262,18 @@ func (self *Pidgey) Run() {
 				}
 				break
 			default:
-				log.Debug("ARE?: %+v", msg)
+				log.Debug("WHAAAAAT?: %+v", msg)
 			}
 		case r := <- self.ErrorChannel:
 			self.RetryMap[r.Id] = append(self.RetryMap[r.Id], r)
-			log.Debug("ADD RETRYABLE MAP")
+			log.Debug("ADD RETRYABLE MAP. But we don't do anything")
 			break
 		}
 	}
 
-	// maintenance goroutine
-	go func() {
-		for {
-
-			time.Sleep(time.Second)
-		}
-	}()
 }
 
-func (self *Pidgey) CleanHoge(conn Connection) {
+func (self *Pidgey) CleanSubscription(conn Connection) {
 	for t, _ := range conn.GetSubscribedTopics() {
 		if conn.ShouldClearSession() {
 			self.Qlobber.Remove(t, conn)
@@ -298,7 +290,6 @@ func (self *Pidgey) SendWillMessage(conn Connection) {
 	msg.TopicName = will.Topic
 	msg.Payload = []byte(will.Message)
 	msg.QosLevel = int(will.Qos)
-	log.Debug("%s => %s", msg.TopicName, msg.Payload)
 	self.Queue <- msg
 }
 
@@ -309,10 +300,9 @@ func (self *Pidgey) HandleRequest(conn Connection) error {
 
 	err := self.handle(conn)
 	if err != nil {
-		self.CleanHoge(conn)
+		self.CleanSubscription(conn)
 		if _, ok := err.(*DisconnectError); !ok {
 			if conn.HasWillMessage() {
-				log.Debug("Okay, Send Will Message")
 				self.SendWillMessage(conn)
 			}
 		}
@@ -327,9 +317,8 @@ func (self *Pidgey) handle(conn Connection) error {
 		return err
 	}
 
-	// TODO: Roleとかのflagつけて同一のにしちゃってもいいきもしたけどこみいってくると面倒という
+	// TODO: it woud be better if we can share this with client library. but it's bother me
 	switch (msg.GetType()) {
-
 	case codec.PACKET_TYPE_PUBLISH:
 		p := msg.(*codec.PublishMessage)
 		//log.Debug("Received Publish Message[%s] : %+v", conn.GetId(), p)
@@ -358,7 +347,6 @@ func (self *Pidgey) handle(conn Connection) error {
 //			id := conn.GetOutGoingTable().NewId()
 //			p.PacketIdentifier = id
 			conn.GetOutGoingTable().Register(p.PacketIdentifier, p, conn)
-			//puback,pubrec,rel,comp
 			p.Opaque = conn
 		}
 
@@ -432,7 +420,7 @@ func (self *Pidgey) handle(conn Connection) error {
 			conn.AppendSubscribedTopic(payload.TopicPath, int(payload.RequestedQos))
 
 			// TODO: これはAtomicにさせたいなー、とおもったり。
-			// というかTopicは実装上もうつかってないので消していいや
+			// というかTopicは実装上もうつかってないので消していい
 			if !self.HasTopic(payload.TopicPath) {
 				topic, _ = self.CreateTopic(payload.TopicPath)
 			} else {
@@ -496,7 +484,7 @@ func (self *Pidgey) handle(conn Connection) error {
 	return nil
 }
 
-// これTrieにしたいんだけどめんどい
+// TODO: implement trie. but regexp works well.
 func (self *Pidgey) RetainMatch(topic string) []*codec.PublishMessage {
 	var result []*codec.PublishMessage
 	orig := topic

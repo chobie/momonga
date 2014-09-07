@@ -30,12 +30,12 @@ func (self *Balancer) Execute(callback func()) {
 
 	self.SleepUsec = int64(float64(self.Total) * float64(1000000 / self.PerSec))
 	if self.SleepUsec < (10000 / 10) {
-		// 休むまでもないんで次
+		// go ahead!
 		self.Prior = self.Start
 		return
 	}
 
-	// ちょっとスピード出しすぎねー
+	// hey, let's take a rest.
 	time.Sleep(time.Duration(self.SleepUsec * 1000))
 	self.Prior = time.Now().UnixNano() / 1e3
 	self.ElapsedUseconds = self.Prior - self.Start
