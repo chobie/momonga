@@ -148,7 +148,7 @@ func (self *TcpServer) acceptLoop(listener net.Listener, yield func()) {
 			// TODO: Send Error message and close connection immediately as we don't won't accept new connection.
 		}
 
-		conn := NewTcpConnection(client, self, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
+		conn := NewTcpConnection(client, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
 				log.Debug("Closing Connection")
 				//conn.Close()
 			})
@@ -198,7 +198,7 @@ func (self *TcpServer) ListenAndServe() {
 
 	http.Handle("/mqtt", websocket.Handler(func(ws *websocket.Conn) {
 			log.Debug("Accept websocket")
-			conn := NewTcpConnection(ws, self, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
+			conn := NewTcpConnection(ws, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
 					log.Debug("Closing Connection")
 					//conn.Close()
 				})

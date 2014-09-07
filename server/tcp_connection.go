@@ -15,7 +15,6 @@ import (
 type TcpConnection struct {
 	Socket net.Conn
 	Address net.Addr
-	Buffer *Buffer
 	Connected time.Time
 	State State
 	yield func(conn Connection, time time.Time)
@@ -62,11 +61,9 @@ func (self *TcpConnection) SetKeepaliveInterval(interval int) {
 }
 
 func (self *TcpConnection) ResetState() {
-	self.Buffer.ReadBuffer.Reset()
-	self.Buffer.WriteBuffer.Reset()
 }
 
-func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yield func(conn Connection, time time.Time)) Connection {
+func NewTcpConnection(socket net.Conn, retry chan *Retryable, yield func(conn Connection, time time.Time)) Connection {
 	conn := &TcpConnection{
 		Socket: socket,
 		Address: socket.RemoteAddr(),
@@ -81,14 +78,6 @@ func NewTcpConnection(socket net.Conn, server Server, retry chan *Retryable, yie
 		SubscribedTopics: make(map[string]int),
 		Qlobber: util.NewQlobber(),
 	}
-
-	readMessage := make([]byte, 0, MAX_REQUEST_SIZE)
-	writeMessage := make([]byte, 0, MAX_REQUEST_SIZE)
-
-	buffer := &Buffer{}
-	buffer.ReadBuffer = bytes.NewBuffer(readMessage)
-	buffer.WriteBuffer = bytes.NewBuffer(writeMessage)
-	conn.Buffer = buffer
 
 	go func() {
 		for {
@@ -165,7 +154,6 @@ func (self *TcpConnection) SetSocket(conn net.Conn) {
 }
 
 func (self *TcpConnection) ClearBuffer() {
-	self.Buffer.ClearBuffer()
 }
 
 func (self *TcpConnection) GetAddress() net.Addr {
@@ -207,11 +195,6 @@ func (self *TcpConnection) WriteMessage(msg mqtt.Message) (error){
 
 func (self *TcpConnection) Write(reader *bytes.Reader) (error){
 	var err error
-
-	self.Buffer.WriteBuffer.Reset()
-	defer func() {
-		self.Buffer.WriteBuffer.Reset();
-	}()
 
 	// TODO: これどっしよっかなー。
 	//conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
