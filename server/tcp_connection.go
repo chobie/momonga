@@ -17,7 +17,6 @@ type TcpConnection struct {
 	Address           net.Addr
 	Connected         time.Time
 	State             State
-	yield             func(conn Connection, time time.Time)
 	WillMessage       *mqtt.WillMessage
 	OutGoingTable     *util.MessageTable
 	SubscribedTopics  map[string]int
@@ -28,6 +27,60 @@ type TcpConnection struct {
 	ClearSession      bool
 	Qlobber           *util.Qlobber
 }
+/*
+OKだとおもうの
+func (self *TcpConnection) GetState() State {
+func (self *TcpConnection) SetState(s State) {
+func (self *TcpConnection) ResetState() {
+func (self *TcpConnection) SetKeepaliveInterval(interval int) {
+
+func (self *TcpConnection) DisableClearSession() {
+func (self *TcpConnection) ShouldClearSession() bool {
+	ClearSession -> CleanSession
+
+上位に持たせたい?
+func (self *TcpConnection) SetWillMessage(will mqtt.WillMessage) {
+func (self *TcpConnection) GetWillMessage() *mqtt.WillMessage {
+func (self *TcpConnection) HasWillMessage() bool {
+func (self *TcpConnection) AppendSubscribedTopic(topic string, qos int) {
+func (self *TcpConnection) RemoveSubscribedTopic(topic string) {
+
+func (self *TcpConnection) GetSubscribedTopicQos(topic string) int {
+func (self *TcpConnection) GetSubscribedTopics() map[string]int {
+
+未処理
+func (self *TcpConnection) GetOutGoingTable() *util.MessageTable {
+	GetInflightTable
+
+func (self *TcpConnection) IsAlived() bool {
+func (self *TcpConnection) GetId() string {
+func (self *TcpConnection) Close() {
+func NewTcpConnection(socket net.Conn, retry chan *Retryable) Connection {
+
+-- 基本は新しい方を尊重させたい
+func (self *Connection) SetConnection(c io.ReadWriteCloser) {
+func (self *Connection) Subscribe(topic string, QoS int) error {
+func (self *Connection) setupKicker() {
+func (self *Connection) Ping() {
+func (self *Connection) On(event string, callback interface{}, args ...bool) error {
+func (self *Connection) GetConnectionState() ConnectionState {
+func (self *Connection) Publish(TopicName string, Payload []byte, QosLevel int, retain bool, opaque interface{}) {
+func (self *Connection) HasConnection() bool {
+func (self *Connection) ParseMessage() (codec.Message, error) {
+	func (self *TcpConnection) ReadMessage() (mqtt.Message, error) {からかえる
+
+func (self *Connection) Read(p []byte) (int, error) {
+func (self *Connection) Write(b []byte) (int, error) {
+	func (self *TcpConnection) WriteMessageQueue(request mqtt.Message) {
+	func (self *TcpConnection) WriteMessage(msg mqtt.Message) error {
+	func (self *TcpConnection) Write(reader *bytes.Reader) error {
+	Writeだけであとはチャンネルに直接渡そう?
+
+func (self *Connection) Close() error {
+func (self *Connection) Disconnect() {
+func (self *Connection) Unsubscribe(topic string) {
+func (self *Connection) invalidateTimer() {
+*/
 
 func (self *TcpConnection) SetWillMessage(will mqtt.WillMessage) {
 	self.WillMessage = &will
@@ -63,12 +116,11 @@ func (self *TcpConnection) SetKeepaliveInterval(interval int) {
 func (self *TcpConnection) ResetState() {
 }
 
-func NewTcpConnection(socket net.Conn, retry chan *Retryable, yield func(conn Connection, time time.Time)) Connection {
+func NewTcpConnection(socket net.Conn, retry chan *Retryable) Connection {
 	conn := &TcpConnection{
 		Socket:            socket,
 		Address:           socket.RemoteAddr(),
 		Connected:         time.Now(),
-		yield:             yield,
 		OutGoingTable:     util.NewMessageTable(),
 		WriteQueue:        make(chan mqtt.Message, 8192),
 		WriteQueueFlag:    make(chan bool, 1),
@@ -106,11 +158,12 @@ func NewTcpConnection(socket net.Conn, retry chan *Retryable, yield func(conn Co
 					continue
 				}
 			case <-conn.WriteQueueFlag:
-				// TODO: なにがしたかったんだっけか。ああ、殺したかったんだ
+				// MEMO: Terminate goroutine
 				return
 			}
 		}
 	}()
+
 	return conn
 }
 
@@ -143,17 +196,6 @@ func (self *TcpConnection) RemoveSubscribedTopic(topic string) {
 	if _, ok := self.SubscribedTopics[topic]; ok {
 		delete(self.SubscribedTopics, topic)
 	}
-}
-
-func (self *TcpConnection) GetSocket() net.Conn {
-	return self.Socket
-}
-
-func (self *TcpConnection) SetSocket(conn net.Conn) {
-	self.Socket = conn
-}
-
-func (self *TcpConnection) ClearBuffer() {
 }
 
 func (self *TcpConnection) GetAddress() net.Addr {
@@ -212,6 +254,7 @@ func (self *TcpConnection) GetId() string {
 func (self *TcpConnection) Close() {
 	//	log.Debug("[TcpConnection Closed]")
 	self.Socket.Close()
+	self.WriteQueueFlag <- true
 
 	// TODO
 	//self.Server.RemoveConnection(self)

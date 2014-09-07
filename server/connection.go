@@ -44,9 +44,6 @@ type Connection interface {
 	GetState() State
 	ResetState()
 	ReadMessage() (mqtt.Message, error)
-	GetSocket() net.Conn
-	SetSocket(net.Conn)
-	ClearBuffer()
 	GetAddress() net.Addr
 	Write(reader *bytes.Reader) error
 	IsAlived() bool

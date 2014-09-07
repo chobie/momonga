@@ -18,21 +18,21 @@ const (
 )
 
 type Connection struct {
-	Connection io.ReadWriteCloser
-	Events map[string]interface{}
-	Queue        chan codec.Message
-	ProcessQueue chan codec.Message
-	OfflineQueue    []codec.Message
-	MaxOfflineQueue int
+	Connection       io.ReadWriteCloser
+	Events           map[string]interface{}
+	Queue            chan codec.Message
+	ProcessQueue     chan codec.Message
+	OfflineQueue     []codec.Message
+	MaxOfflineQueue  int
 	InflightTable    *util.MessageTable
 	SubscribeHistory map[string]int
 	ConnectionState  ConnectionState
 	PingCounter      int
 	Reconnect        bool
-	Balancer        *util.Balancer
-	Mutex           sync.RWMutex
-	Kicker          *time.Timer
-	Keepalive       int
+	Balancer         *util.Balancer
+	Mutex            sync.RWMutex
+	Kicker           *time.Timer
+	Keepalive        int
 }
 
 func NewConnection() *Connection {
@@ -192,12 +192,12 @@ func NewConnection() *Connection {
 						c.InflightTable.Register(id, sb, nil)
 					}
 
-//					if v, ok := c.Events["publish"]; ok {
-//						if cb, ok := v.(func(*codec.PublishMessage)); ok {
-//							cb(sb)
-//						} else {
-//						}
-//					}
+					//					if v, ok := c.Events["publish"]; ok {
+					//						if cb, ok := v.(func(*codec.PublishMessage)); ok {
+					//							cb(sb)
+					//						} else {
+					//						}
+					//					}
 
 				}
 
@@ -354,7 +354,7 @@ func (self *Connection) SetConnection(c io.ReadWriteCloser) {
 func (self *Connection) Subscribe(topic string, QoS int) error {
 	sb := codec.NewSubscribeMessage()
 	sb.Payload = append(sb.Payload, codec.SubscribePayload{
-		TopicPath:  topic,
+		TopicPath:    topic,
 		RequestedQos: uint8(QoS),
 	})
 
@@ -378,10 +378,10 @@ func (self *Connection) setupKicker() {
 	}
 
 	if self.Keepalive > 0 {
-		self.Kicker = time.AfterFunc(time.Second * time.Duration(self.Keepalive), func() {
-				self.Ping()
-				self.Kicker.Reset(time.Second * time.Duration(self.Keepalive))
-			})
+		self.Kicker = time.AfterFunc(time.Second*time.Duration(self.Keepalive), func() {
+			self.Ping()
+			self.Kicker.Reset(time.Second * time.Duration(self.Keepalive))
+		})
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"time"
 	//	"github.com/chobie/momonga/encoding/mqtt"
 )
 
@@ -155,10 +154,8 @@ func (self *MomongaServer) acceptLoop(listener net.Listener, yield func()) {
 			// TODO: Send Error message and close connection immediately as we don't won't accept new connection.
 		}
 
-		conn := NewTcpConnection(client, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
-			log.Debug("Closing Connection")
-			//conn.Close()
-		})
+		conn := NewTcpConnection(client, self.Engine.ErrorChannel)
+
 		self.Connections[conn.GetId()] = conn
 		self.ConnectionCount++
 
@@ -202,10 +199,7 @@ func (self *MomongaServer) ListenAndServe() {
 	// TODO: 場所変える
 	http.Handle("/mqtt", websocket.Handler(func(ws *websocket.Conn) {
 		log.Debug("Accept websocket")
-		conn := NewTcpConnection(ws, self.Engine.ErrorChannel, func(c Connection, time time.Time) {
-			log.Debug("Closing Connection")
-			//conn.Close()
-		})
+		conn := NewTcpConnection(ws, self.Engine.ErrorChannel)
 		self.Connections[ws.RemoteAddr().String()] = conn
 		self.ConnectionCount++
 		self.HandleConnection(ws.RemoteAddr().String())

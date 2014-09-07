@@ -121,29 +121,7 @@ func (self *MmuxConnection) ReadMessage() (mqtt.Message, error) {
 
 	return self.PrimaryConnection.ReadMessage()
 }
-func (self *MmuxConnection) GetSocket() net.Conn {
-	if self.PrimaryConnection == nil {
-		return nil
-	}
 
-	return self.PrimaryConnection.GetSocket()
-}
-
-func (self *MmuxConnection) SetSocket(sock net.Conn) {
-	if self.PrimaryConnection == nil {
-		return
-	}
-
-	self.PrimaryConnection.SetSocket(sock)
-
-}
-func (self *MmuxConnection) ClearBuffer() {
-	if self.PrimaryConnection == nil {
-		return
-	}
-
-	self.PrimaryConnection.ClearBuffer()
-}
 func (self *MmuxConnection) GetAddress() net.Addr {
 	if self.PrimaryConnection == nil {
 		return nil

@@ -6,9 +6,9 @@ import (
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
 	"io"
+	"net"
 	"sync"
 	"time"
-	"net"
 )
 
 type Option struct {
@@ -46,10 +46,10 @@ func NewClient(opt Option) *Client {
 			Identifier: "momongacli",
 			Keepalive:  10,
 		},
-		Connection: NewConnection(),
-		CleanSession:    true,
-		Mutex:           sync.RWMutex{},
-		Errors: make(chan error, 128),
+		Connection:   NewConnection(),
+		CleanSession: true,
+		Mutex:        sync.RWMutex{},
+		Errors:       make(chan error, 128),
 	}
 
 	if len(opt.Magic) < 1 {
@@ -60,7 +60,7 @@ func NewClient(opt Option) *Client {
 	}
 	if len(opt.Identifier) < 1 {
 		// generate random string
-		suffix := util.GenerateId(23 - (len(client.Option.Identifier)+1))
+		suffix := util.GenerateId(23 - (len(client.Option.Identifier) + 1))
 		opt.Identifier = fmt.Sprintf("%s-%s", client.Option.Identifier, suffix)
 	}
 
@@ -144,7 +144,7 @@ func (self *Client) Loop() {
 
 	// TODO: move this function to connect (実際にReadするやつ)
 	for {
-		switch (self.getConnectionState()) {
+		switch self.getConnectionState() {
 		case CONNECTION_STATE_CONNECTED:
 			_, err := self.Connection.ParseMessage()
 			if err != nil {

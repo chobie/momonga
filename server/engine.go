@@ -211,84 +211,6 @@ func (self *Momonga) Handshake(conn Connection) (*MmuxConnection, error) {
 	return mux, nil
 }
 
-func (self *Momonga) RunMaintenanceThread() {
-	for {
-		// TODO: implement $SYS here.
-		time.Sleep(time.Second)
-	}
-
-}
-
-func (self *Momonga) Run() {
-	go self.RunMaintenanceThread()
-
-	// TODO: improve this
-	for {
-		select {
-		// this is kind of a Write Queue
-		case msg := <-self.Queue:
-			switch msg.GetType() {
-			case codec.PACKET_TYPE_PUBLISH:
-				// NOTE: ここは単純にdestinationに対して送る、だけにしたい
-
-				m := msg.(*codec.PublishMessage)
-				log.Debug("sending PUBLISH [id:%d, lvl:%d]", m.PacketIdentifier, m.QosLevel)
-				// TODO: Have to persist retain message.
-				if m.Retain > 0 {
-					if len(m.Payload) == 0 {
-						delete(self.Retain, m.TopicName)
-					} else {
-						self.Retain[m.TopicName] = m
-					}
-				}
-
-				// Publishで受け取ったMessageIdのやつのCountをとっておく
-				// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
-				log.Debug("TopicName: %s", m.TopicName)
-				targets := self.Qlobber.Match(m.TopicName)
-
-				if m.TopicName[0:1] == "#" {
-					// TODO:  [MQTT-4.7.2-1] The Server MUST NOT match Topic Filters starting with a wildcard character
-					// (# or +) with Topic Names beginning with a $ character
-				}
-
-				for i := range targets {
-					cn := targets[i].(Connection)
-					x, err := codec.CopyPublishMessage(m)
-					if err != nil {
-						continue
-					}
-
-					subscriberQos := cn.GetSubscribedTopicQos(m.TopicName)
-
-					// Downgrade QoS
-					if subscriberQos < x.QosLevel {
-						x.QosLevel = subscriberQos
-					}
-					if x.QosLevel > 0 {
-						// TODO: ClientごとにInflightTableを持つ
-						// engineのOutGoingTableなのはとりあえず、ということ
-						id := self.OutGoingTable.NewId()
-						x.PacketIdentifier = id
-						if sender, ok := x.Opaque.(Connection); ok {
-							self.OutGoingTable.Register2(x.PacketIdentifier, x, len(targets), sender)
-						}
-					}
-					log.Debug("sending publish message to %s [%s %s %d %d]", targets[i].(Connection).GetId(), x.TopicName, x.Payload, x.PacketIdentifier, x.QosLevel)
-					cn.WriteMessageQueue(x)
-				}
-				break
-			default:
-				log.Debug("WHAAAAAT?: %+v", msg)
-			}
-		case r := <-self.ErrorChannel:
-			self.RetryMap[r.Id] = append(self.RetryMap[r.Id], r)
-			log.Debug("ADD RETRYABLE MAP. But we don't do anything")
-			break
-		}
-	}
-}
-
 func (self *Momonga) CleanSubscription(conn Connection) {
 	for t, _ := range conn.GetSubscribedTopics() {
 		if conn.ShouldClearSession() {
@@ -518,4 +440,83 @@ func (self *Momonga) RetainMatch(topic string) []*codec.PublishMessage {
 	}
 
 	return result
+}
+
+
+// below methods are intend to maintain engine itself (remove needless connection, dispatch queue).
+func (self *Momonga) RunMaintenanceThread() {
+	for {
+		// TODO: implement $SYS here.
+		time.Sleep(time.Second)
+	}
+}
+
+func (self *Momonga) Run() {
+	go self.RunMaintenanceThread()
+
+	// TODO: improve this
+	for {
+		select {
+			// this is kind of a Write Queue
+		case msg := <-self.Queue:
+			switch msg.GetType() {
+			case codec.PACKET_TYPE_PUBLISH:
+				// NOTE: ここは単純にdestinationに対して送る、だけにしたい
+
+				m := msg.(*codec.PublishMessage)
+				log.Debug("sending PUBLISH [id:%d, lvl:%d]", m.PacketIdentifier, m.QosLevel)
+				// TODO: Have to persist retain message.
+				if m.Retain > 0 {
+					if len(m.Payload) == 0 {
+						delete(self.Retain, m.TopicName)
+					} else {
+						self.Retain[m.TopicName] = m
+					}
+				}
+
+				// Publishで受け取ったMessageIdのやつのCountをとっておく
+				// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
+				log.Debug("TopicName: %s", m.TopicName)
+				targets := self.Qlobber.Match(m.TopicName)
+
+				if m.TopicName[0:1] == "#" {
+					// TODO:  [MQTT-4.7.2-1] The Server MUST NOT match Topic Filters starting with a wildcard character
+					// (# or +) with Topic Names beginning with a $ character
+				}
+
+				for i := range targets {
+					cn := targets[i].(Connection)
+					x, err := codec.CopyPublishMessage(m)
+					if err != nil {
+						continue
+					}
+
+					subscriberQos := cn.GetSubscribedTopicQos(m.TopicName)
+
+					// Downgrade QoS
+					if subscriberQos < x.QosLevel {
+						x.QosLevel = subscriberQos
+					}
+					if x.QosLevel > 0 {
+						// TODO: ClientごとにInflightTableを持つ
+						// engineのOutGoingTableなのはとりあえず、ということ
+						id := self.OutGoingTable.NewId()
+						x.PacketIdentifier = id
+						if sender, ok := x.Opaque.(Connection); ok {
+							self.OutGoingTable.Register2(x.PacketIdentifier, x, len(targets), sender)
+						}
+					}
+					log.Debug("sending publish message to %s [%s %s %d %d]", targets[i].(Connection).GetId(), x.TopicName, x.Payload, x.PacketIdentifier, x.QosLevel)
+					cn.WriteMessageQueue(x)
+				}
+				break
+			default:
+				log.Debug("WHAAAAAT?: %+v", msg)
+			}
+		case r := <-self.ErrorChannel:
+			self.RetryMap[r.Id] = append(self.RetryMap[r.Id], r)
+			log.Debug("ADD RETRYABLE MAP. But we don't do anything")
+			break
+		}
+	}
 }
