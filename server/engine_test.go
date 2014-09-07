@@ -2,14 +2,78 @@ package server
 
 import (
 	"github.com/chobie/momonga/configuration"
+	codec "github.com/chobie/momonga/encoding/mqtt"
+	"github.com/chobie/momonga/util"
+	log "github.com/chobie/momonga/logger"
 	. "gopkg.in/check.v1"
 	"testing"
-	"github.com/chobie/momonga/client"
-	"net"
 	"io"
 	"os"
+	"bytes"
 	"time"
+	"net"
 )
+
+// mock
+type MockConnection struct {
+	bytes.Buffer
+	Closed bool
+	Local mockAddr
+	Remote mockAddr
+	Type int
+}
+
+type mockAddr struct {
+}
+
+func (m *mockAddr) Network() string {
+	return "debug"
+}
+
+func (m *mockAddr) String() string {
+	return "debug"
+}
+
+func (m *MockConnection) Close() error {
+	m.Closed = true
+	return nil
+}
+
+func (m *MockConnection) LocalAddr() net.Addr {
+	return &m.Local
+}
+
+func (m *MockConnection) RemoteAddr() net.Addr{
+	return &m.Remote
+}
+
+func (m *MockConnection) SetDeadline(t time.Time) error {
+	return nil
+}
+
+func (m *MockConnection) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+func (m *MockConnection) SetWriteDeadline(t time.Time) error {
+	return nil
+}
+
+func CreateEngine() *Momonga {
+	return &Momonga{
+		Topics:        map[string]*Topic{},
+		Queue:         make(chan codec.Message, 8192),
+		OutGoingTable: util.NewMessageTable(),
+		Qlobber:       util.NewQlobber(),
+		Retain:        map[string]*codec.PublishMessage{},
+		Connections:   map[string]*MmuxConnection{},
+		SubscribeMap:  map[string]string{},
+		RetryMap:      map[string][]*Retryable{},
+		ErrorChannel:  make(chan *Retryable, 8192),
+	}
+}
+//
+
 
 func Test(t *testing.T) { TestingT(t) }
 
@@ -31,24 +95,106 @@ func (s *EngineSuite) TestServerShouldCreateWithDefaultConfiguration(c *C) {
 }
 
 func (s *EngineSuite) TestBasic(c *C) {
-	conf, _ := configuration.LoadConfiguration("")
-	conf.Server.Port = -1
-	conf.Server.Socket = "/Users/chobie/src/momonga/socket"
+	log.SetupLogging("debug", "stdout")
 
-	svr, _ := NewMomongaServer(conf)
-	go svr.ListenAndServe()
-	<- svr.Wakeup
+	// This test introduce how to setup custom MQTT server
 
-	cli := client.NewClient(client.Option{
-		TransporterCallback: func() (io.ReadWriteCloser, error) {
-			conn, err := net.Dial("unix", "/Users/chobie/src/momonga/socket")
-			return conn, err
-		},
-	})
+	// 1) You need to setup Momonga engine like this.
+	engine := CreateEngine()
+	// 2) Running Engine
+	go engine.Run()
 
-	go cli.Loop()
-	cli.Connect()
-	cli.Publish("/debug", []byte("hoge"), 0)
-	time.Sleep(time.Second)
-	svr.Terminate()
+	// 3) engine expects net.Conn (see MockConnection)
+	mock := &MockConnection{}
+	conn := NewMyConnection()
+	conn.SetMyConnection(mock)
+	conn.SetId("debug")
+
+	// 4) setup handler. This handler implementation is example.
+	// you can customize behaviour with On method.
+	hndr := NewHandler(conn, engine)
+	conn.SetOpaque(hndr)
+
+	// 5) Now,
+	msg := codec.NewConnectMessage()
+	msg.Magic = []byte("MQTT")
+	msg.Version = uint8(4)
+	msg.Identifier = "debug"
+	msg.CleanSession = true
+	msg.KeepAlive = uint16(0) // Ping is annoyed at this time
+	b, _ := codec.Encode(msg)
+	io.Copy(mock, bytes.NewReader(b))
+
+	// 6) just call conn.ParseMessage(). then handler will work.
+	r, err := conn.ParseMessage()
+
+
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_CONNECT)
+
+	// NOTE: Client turn. don't care this.
+	time.Sleep(time.Millisecond)
+	r, err = conn.ParseMessage()
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_CONNACK)
+
+	// Subscribe
+	sub := codec.NewSubscribeMessage()
+	sub.Payload = append(sub.Payload, codec.SubscribePayload{TopicPath: "/debug"})
+	sub.PacketIdentifier = 1
+	b, _ = codec.Encode(sub)
+	io.Copy(mock, bytes.NewReader(b))
+
+	// (Server)
+	r, err = conn.ParseMessage()
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_SUBSCRIBE)
+	rsub := r.(*codec.SubscribeMessage)
+	c.Assert(rsub.PacketIdentifier, Equals, uint16(1))
+	c.Assert(rsub.Payload[0].TopicPath, Equals, "/debug")
+
+	// (Client) suback
+	time.Sleep(time.Millisecond)
+	r, err = conn.ParseMessage()
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_SUBACK)
+
+	// (Client) Publish
+	pub := codec.NewPublishMessage()
+	pub.TopicName = "/debug"
+	pub.Payload = []byte("hello")
+	b, _ = codec.Encode(pub)
+	io.Copy(mock, bytes.NewReader(b))
+
+	// (Server)
+	r, err = conn.ParseMessage()
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_PUBLISH)
+	rpub := r.(*codec.PublishMessage)
+	c.Assert(rpub.TopicName, Equals, "/debug")
+
+	// (Client) received publish message
+	time.Sleep(time.Millisecond)
+	r, err = conn.ParseMessage()
+	rp := r.(*codec.PublishMessage)
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_PUBLISH)
+	c.Assert(rp.TopicName, Equals, "/debug")
+	c.Assert(string(rp.Payload), Equals, "hello")
+
+	// okay, now disconnect from server
+	dis := codec.NewDisconnectMessage()
+	b, _ = codec.Encode(dis)
+	io.Copy(mock, bytes.NewReader(b))
+	r, err = conn.ParseMessage()
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_DISCONNECT)
+
+	// then, receive EOF from server.
+	time.Sleep(time.Millisecond)
+	r, err = conn.ParseMessage()
+	c.Assert(err, Equals, nil)
+
+	// That's it.
+	engine.Terminate()
 }

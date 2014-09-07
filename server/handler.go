@@ -17,6 +17,7 @@ func NewHandler(conn Connection, engine *Momonga) *Handler {
 		Connection: conn,
 	}
 	if cn, ok := conn.(*MyConnection); ok {
+		// Defaultの動作ではなんともいえないから上書きが必要なもの
 		cn.On("connect", hndr.HandshakeInternal, true)
 		cn.On("disconnect", hndr.Disconnect, true)
 
@@ -26,8 +27,7 @@ func NewHandler(conn Connection, engine *Momonga) *Handler {
 
 		cn.On("pingreq", hndr.Pingreq, true)
 
-
-		// Defaultで大丈夫そうだけど念のため
+		// Defaultの動作で大丈夫なもの(念のため)
 		cn.On("puback", hndr.Puback, true)
 		cn.On("pubrec", hndr.Pubrec, true)
 		cn.On("pubrel", hndr.Pubrel, true)

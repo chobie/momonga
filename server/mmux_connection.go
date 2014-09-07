@@ -7,6 +7,7 @@ import (
 )
 
 // MQTT Multiplexer Connection
+// TODO: 途中で死んだとき用のやつを追加する
 type MmuxConnection struct {
 	// Primary
 	PrimaryConnection Connection

@@ -29,6 +29,9 @@ func NewMomongaServer(conf *configuration.Config) (*MomongaServer, error) {
 	server.listenAddress = conf.GetListenAddress()
 	server.SSLlistenAddress = conf.GetSSLListenAddress()
 	server.listenSocket = conf.GetSocketAddress()
+	server.WebSocketMount = conf.Server.WebSocketMount
+	server.WebSocketPort = conf.Server.WebSocketPort
+
 	if !conf.Server.EnableSys {
 		server.Engine.DisableSys()
 	}

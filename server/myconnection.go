@@ -165,6 +165,7 @@ func NewMyConnection() *MyConnection {
 		}
 	}
 
+	// これはコネクション渡したほうがいいんではないだろうか。
 	c.Events["pingreq"] = func() {
 		// TODO: check Ping count periodically, abort MyConnection when the counter exceeded.
 		c.PingCounter++
@@ -177,7 +178,6 @@ func NewMyConnection() *MyConnection {
 
 	c.Events["disconnect"] = func() {
 		// nothing to do ?
-		log.Debug(">>> DISCON")
 		c.State = STATE_CLOSED
 	}
 
@@ -721,7 +721,8 @@ func (self *MyConnection) WriteMessage(msg codec.Message) error {
 	remaining := len(data)
 	offset := 0
 
-	fmt.Printf("[WRITE: %s] %+v\n%s\n", msg.GetTypeAsString(), msg, hex.Dump(data))
+	log.Debug("[WRITE: %s] %+v\n%s\n", msg.GetTypeAsString(), msg, hex.Dump(data))
+
 	for offset < remaining {
 		size, err := self.Write(data[offset:])
 		if err != nil {
@@ -735,7 +736,7 @@ func (self *MyConnection) WriteMessage(msg codec.Message) error {
 				return err
 			}
 
-			fmt.Printf("WRITE ERROR: %s", err)
+			log.Error("WRITE ERROR: %s", err)
 		}
 		offset += size
 	}

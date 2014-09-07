@@ -10,8 +10,7 @@ import (
 	"time"
 )
 
-// TODO: use client/connection. it's easy to extend.
-// Anonymous(?) connection
+// DEPRECATED: WILL BE REMOVE SOON
 type TcpConnection struct {
 	Socket            net.Conn
 	Address           net.Addr

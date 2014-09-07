@@ -6,9 +6,9 @@ import (
 	"io"
 	"net"
 	"os"
-//	"code.google.com/p/go.net/websocket"
-//	"net/http"
-	//	"github.com/chobie/momonga/encoding/mqtt"
+	"code.google.com/p/go.net/websocket"
+	"net/http"
+	"fmt"
 )
 
 type MomongaServer struct {
@@ -28,6 +28,8 @@ type MomongaServer struct {
 	UnixShutdown chan bool
 	SSLShutdown chan bool
 	Wakeup chan bool
+	WebSocketPort int
+	WebSocketMount string
 }
 
 func (self *MomongaServer) Terminate() {
@@ -38,57 +40,7 @@ func (self *MomongaServer) SSLAvailable() bool {
 	return true
 }
 
-func (self *MomongaServer) HandleConnection(Identifier string) {
-	var conn Connection
-	var ok bool
-
-	if conn, ok = self.Connections[Identifier]; !ok {
-		log.Error("Connection not find: %s", Identifier)
-		return
-	}
-
-	mux, err := self.Engine.Handshake(conn)
-	if err != nil {
-		log.Debug("Handshake Error: %s", err)
-		return
-	}
-
-	for {
-		err := self.Engine.HandleRequest(mux)
-		if err != nil {
-			// Closeとかは必ずここでやる
-			if _, ok := err.(*DisconnectError); !ok {
-				if nerr, ok := err.(net.Error); ok {
-					if nerr.Timeout() {
-						// Closing connection.
-					} else if nerr.Temporary() {
-						log.Info("Temporary Error: %s", err)
-					}
-				} else if err == io.EOF {
-					// Expected error. Closing connection.
-				} else {
-					log.Error("Handle Connection Error: %s", err)
-				}
-			}
-
-			// どうしよっかなー
-			mux.Detach(conn)
-			conn.Close()
-
-			if mux.ShouldClearSession() {
-				delete(self.Engine.Connections, mux.GetId())
-				delete(self.Connections, mux.GetId())
-			}
-
-			// ここはテンポラリ接続の所
-			delete(self.Connections, Identifier)
-			self.ConnectionCount--
-			return
-		}
-	}
-}
-
-func (self *MomongaServer) HandleConnection2(conn Connection) {
+func (self *MomongaServer) HandleConnection(conn Connection) {
 	for {
 		_, err := conn.ReadMessage()
 		if conn.GetState() == STATE_CLOSED {
@@ -208,7 +160,7 @@ func (self *MomongaServer) acceptLoop(listener net.Listener, yield func()) {
 		self.Connections[conn.GetId()] = conn
 		self.ConnectionCount++
 
-		go self.HandleConnection2(conn)
+		go self.HandleConnection(conn)
 	}
 }
 
@@ -238,22 +190,27 @@ func (self *MomongaServer) ListenAndServe() {
 	if self.listenAddress != "" {
 		go self.tcpListenAndServe()
 	}
-//	if self.listenSocket != "" {
-//		go self.unixListenAndServe()
-//	}
-//	if self.SSLlistenAddress != "" {
-//		go self.tcpSSLListenAndServe()
-//	}
-//
-//	// TODO: 場所変える
-//	http.Handle("/mqtt", websocket.Handler(func(ws *websocket.Conn) {
-//		log.Debug("Accept websocket")
-//		conn := NewTcpConnection(ws, self.Engine.ErrorChannel)
-//		self.Connections[ws.RemoteAddr().String()] = conn
-//		self.ConnectionCount++
-//		self.HandleConnection(ws.RemoteAddr().String())
-//	}))
-//	go http.ListenAndServe(":9999", nil)
+	if self.listenSocket != "" {
+		go self.unixListenAndServe()
+	}
+	if self.SSLlistenAddress != "" {
+		go self.tcpSSLListenAndServe()
+	}
+
+	// TODO: 場所変える
+	if self.WebSocketPort > 0 {
+		http.Handle(self.WebSocketMount, websocket.Handler(func(ws *websocket.Conn) {
+				conn := NewMyConnection()
+				conn.SetMyConnection(ws)
+				conn.SetId(ws.RemoteAddr().String())
+
+				self.Connections[ws.RemoteAddr().String()] = conn
+				self.ConnectionCount++
+				self.HandleConnection(conn)
+			}))
+
+		go http.ListenAndServe(fmt.Sprintf(":%d", self.WebSocketPort), nil)
+	}
 
 	// TODO: pass concurrency parameter
 	go self.Engine.Run()

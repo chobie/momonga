@@ -18,6 +18,8 @@ type Server struct {
 	Port int `toml:"port"`
 	Socket string `toml:"socket"`
 	EnableSys bool `toml:"enable_sys"`
+	WebSocketPort int `toml:"websocket_port"`
+	WebSocketMount string `toml:"websocket_mount"`
 }
 
 func (self *Config) GetListenAddress() string {
@@ -48,6 +50,8 @@ func LoadConfiguration(configFile string) (*Config, error) {
 			Port: 1883,
 			Socket: "",
 			EnableSys: true,
+			WebSocketPort: 9999,
+			WebSocketMount: "/mqtt",
 		},
 	}
 
