@@ -1,13 +1,12 @@
 package server
 
 import (
-	"fmt"
 	"github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
 )
 
 // MQTT Multiplexer Connection
-// TODO: 途中で死んだとき用のやつを追加する
+// TODO: 途中で死んだとき用のやつを追加する.もうちょい素敵な実装にしたい
 type MmuxConnection struct {
 	// Primary
 	PrimaryConnection Connection
@@ -42,13 +41,11 @@ func (self *MmuxConnection) Attach(conn Connection) {
 		}
 
 		if len(self.OfflineQueue) > 0 {
-			fmt.Printf("Process Offline Queue: Playback: %d", len(self.OfflineQueue))
+			//fmt.Printf("Process Offline Queue: Playback: %d", len(self.OfflineQueue))
 			for i := 0; i < len(self.OfflineQueue); i++ {
 				self.WriteMessageQueue(self.OfflineQueue[i])
 			}
 			self.OfflineQueue = self.OfflineQueue[:0]
-		} else {
-			fmt.Printf("Offline queue is zero\n")
 		}
 	}
 
@@ -64,7 +61,6 @@ func (self *MmuxConnection) Detach(conn Connection) {
 		self.PrimaryConnection = nil
 	}
 
-	v := len(self.Connections)
 	delete(self.Connections, conn.GetRealId())
 
 	if len(self.Connections) == 0 {
@@ -75,7 +71,6 @@ func (self *MmuxConnection) Detach(conn Connection) {
 			break
 		}
 	}
-	fmt.Printf("detached: %d => %d, %+v\n", v, len(self.Connections), self.PrimaryConnection)
 }
 
 func (self *MmuxConnection) WriteMessage(request mqtt.Message) error {
@@ -87,12 +82,9 @@ func (self *MmuxConnection) WriteMessage(request mqtt.Message) error {
 
 func (self *MmuxConnection) WriteMessageQueue(request mqtt.Message) {
 	if self.PrimaryConnection == nil {
-		fmt.Printf("<DEBUG> APPEND OFFLINE QUEUE\n")
 		self.OfflineQueue = append(self.OfflineQueue, request)
 		return
 	}
-	fmt.Printf("primary %+v\n, len:%d\n", self.PrimaryConnection, len(self.Connections))
-
 	self.PrimaryConnection.WriteMessageQueue(request)
 }
 func (self *MmuxConnection) Close() error {

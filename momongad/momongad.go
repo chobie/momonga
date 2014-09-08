@@ -20,7 +20,7 @@ func main() {
 
 	conf, err := configuration.LoadConfiguration(*configFile)
 	if err != nil {
-		log.Error("Can't read config.toml: %s", err)
+		log.Error("Can't read config.toml. use default setting.: %s", err)
 	}
 	if *pidFile != "" {
 		conf.Server.PidFile = *pidFile

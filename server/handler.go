@@ -18,6 +18,7 @@ func NewHandler(conn Connection, engine *Momonga) *Handler {
 	}
 	if cn, ok := conn.(*MyConnection); ok {
 		// Defaultの動作ではなんともいえないから上書きが必要なもの
+		cn.On("parsed", hndr.Parsed, true)
 		cn.On("connect", hndr.HandshakeInternal, true)
 		cn.On("disconnect", hndr.Disconnect, true)
 
@@ -36,6 +37,10 @@ func NewHandler(conn Connection, engine *Momonga) *Handler {
 
 
 	return hndr
+}
+
+func (self *Handler) Parsed() {
+	self.Engine.System.Broker.Messages.Received++
 }
 
 func (self *Handler) Pubcomp(messageId uint16) {
@@ -86,6 +91,7 @@ func (self *Handler) Disconnect() {
 		cn.Disconnect()
 	}
 
+	self.Engine.System.Broker.Clients.Connected--
 	//return &DisconnectError{}
 }
 
@@ -95,7 +101,7 @@ func (self *Handler) Pingreq(conn Connection) {
 }
 
 func (self *Handler) Publish(p *codec.PublishMessage) {
-	log.Debug("Received Publish Message: %s: %+v", p.PacketIdentifier, p)
+	//log.Debug("Received Publish Message: %s: %+v", p.PacketIdentifier, p)
 	conn := self.Connection
 	if !self.Engine.HasTopic(p.TopicName) {
 		self.Engine.CreateTopic(p.TopicName)
@@ -278,4 +284,6 @@ func (self *Handler) HandshakeInternal(p *codec.ConnectMessage) {
 	}
 	self.Connection = mux
 	log.Debug("handshake Successful: %s", p.Identifier)
+
+	self.Engine.System.Broker.Clients.Connected++
 }

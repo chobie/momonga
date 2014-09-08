@@ -36,6 +36,7 @@ type MyConnection struct {
 	State State
 	CleanSession bool
 	Connected bool
+	Closed chan bool
 }
 
 func (self *MyConnection) SetOpaque(opaque interface{}) {
@@ -65,6 +66,7 @@ func NewMyConnection() *MyConnection {
 		CleanSession: true,
 		Keepalive: 0,
 		State: STATE_INIT,
+		Closed: make(chan bool),
 	}
 
 	c.Events["connected"] = func() {
@@ -188,6 +190,9 @@ func NewMyConnection() *MyConnection {
 	c.Events["connect"] = func(msg *codec.ConnectMessage) {
 	}
 
+	c.Events["parsed"] = func() {
+	}
+
 	// Write Queue
 	go func() {
 		for {
@@ -206,6 +211,8 @@ func NewMyConnection() *MyConnection {
 				c.WriteMessage(msg)
 				c.invalidateTimer()
 				break
+			case <- c.Closed:
+				return
 			}
 		}
 	}()
@@ -377,7 +384,7 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 			}
 		}
 		break
-	case "pingreq", "pingresp", "disconnect":
+	case "pingreq", "pingresp", "disconnect", "parsed":
 		if cv, ok := callback.(func()); ok {
 			v := self.Events[event].(func())
 			if override {
@@ -443,8 +450,13 @@ func (self *MyConnection) ParseMessage() (codec.Message, error) {
 
 	message, err := codec.ParseMessage(self.MyConnection, 8192)
 	if err == nil {
-		log.Debug("Read Message: [%s] %+v", message.GetTypeAsString(), message)
+		//log.Debug("Read Message: [%s] %+v", message.GetTypeAsString(), message)
 
+		if v, ok := self.Events["parsed"]; ok {
+			if cb, ok := v.(func()); ok {
+				cb()
+			}
+		}
 		switch message.GetType() {
 		case codec.PACKET_TYPE_PUBLISH:
 			p := message.(*codec.PublishMessage)
@@ -569,10 +581,10 @@ func (self *MyConnection) ParseMessage() (codec.Message, error) {
 			}
 			break
 		default:
-			fmt.Printf("Unhandled message: %+v\n", message)
+			log.Error("Unhandled message: %+v\n", message)
 		}
 	} else {
-		fmt.Printf(">>> Message: %s, %+v\n", err, message)
+		log.Debug(">>> Message: %s, %+v\n", err, message)
 		if v, ok := self.Events["error"]; ok {
 			if cb, ok := v.(func(error)); ok {
 				cb(err)
@@ -594,6 +606,8 @@ func (self *MyConnection) Write(b []byte) (int, error) {
 
 func (self *MyConnection) Close() error {
 	self.State = STATE_CLOSED
+	self.Closed <- true
+
 	return self.MyConnection.Close()
 }
 

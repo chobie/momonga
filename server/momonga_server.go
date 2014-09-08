@@ -146,8 +146,6 @@ func (self *MomongaServer) acceptLoop(listener net.Listener, yield func()) {
 			// TODO: Send Error message and close connection immediately as we don't won't accept new connection.
 		}
 
-		//conn := NewTcpConnection(client, self.Engine.ErrorChannel)
-
 		conn := NewMyConnection()
 		hndr := NewHandler(conn, self.Engine)
 

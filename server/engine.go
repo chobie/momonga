@@ -40,6 +40,7 @@ type Momonga struct {
 	ErrorChannel chan *Retryable
 	System       System
 	EnableSys    bool
+	Started      time.Time
 }
 
 func (self *Momonga) DisableSys() {
@@ -158,6 +159,13 @@ func (self *Momonga) RetainMatch(topic string) []*codec.PublishMessage {
 	return result
 }
 
+func (self *Momonga) sendMessage(topic string, message []byte, qos int) {
+	msg := codec.NewPublishMessage()
+	msg.TopicName = topic
+	msg.Payload = message
+	msg.QosLevel = qos
+	self.Queue <- msg
+}
 
 // below methods are intend to maintain engine itself (remove needless connection, dispatch queue).
 func (self *Momonga) RunMaintenanceThread() {
@@ -167,6 +175,31 @@ func (self *Momonga) RunMaintenanceThread() {
 //		for i := range self.Connections {
 //			log.Debug("  %+v", self.Connections[i])
 //		}
+
+//		select {
+//			case tuple := <- self.SysUpdateRequest:
+//		default:
+			// TODO: だれかがsubscribeしてる時だけ出力する
+			// TODO: implement whole stats
+			now := time.Now()
+			self.System.Broker.Broker.Uptime = int(now.Sub(self.Started) / 1e9)
+			self.sendMessage("$SYS/broker/broker/uptime", []byte(fmt.Sprintf("%d", self.System.Broker.Broker.Uptime)), 0)
+			self.sendMessage("$SYS/broker/broker/time", []byte(fmt.Sprintf("%d", now.Unix())), 0)
+			self.sendMessage("$SYS/broker/clients/connected", []byte(fmt.Sprintf("%d", self.System.Broker.Clients.Connected)), 0)
+			self.sendMessage("$SYS/broker/messages/received", []byte(fmt.Sprintf("%d", self.System.Broker.Messages.Received)), 0)
+			self.sendMessage("$SYS/broker/messages/sent", []byte(fmt.Sprintf("%d", self.System.Broker.Messages.Sent)), 0)
+			self.sendMessage("$SYS/broker/messages/stored", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/messages/publish/dropped", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/messages/retained/count", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/messages/inflight", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/clients/total", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/clients/maximum", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/clients/disconnected", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/load/bytes/sent", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/load/bytes/received", []byte(fmt.Sprintf("%d", 0)), 0)
+			self.sendMessage("$SYS/broker/subscriptions/count", []byte(fmt.Sprintf("%d", 0)), 0)
+//		}
+
 		time.Sleep(time.Second)
 	}
 }
@@ -184,7 +217,7 @@ func (self *Momonga) Run() {
 				// NOTE: ここは単純にdestinationに対して送る、だけにしたい
 
 				m := msg.(*codec.PublishMessage)
-				log.Debug("sending PUBLISH [id:%d, lvl:%d]", m.PacketIdentifier, m.QosLevel)
+				//log.Debug("sending PUBLISH [id:%d, lvl:%d]", m.PacketIdentifier, m.QosLevel)
 				// TODO: Have to persist retain message.
 				if m.Retain > 0 {
 					if len(m.Payload) == 0 {
@@ -196,7 +229,7 @@ func (self *Momonga) Run() {
 
 				// Publishで受け取ったMessageIdのやつのCountをとっておく
 				// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
-				log.Debug("TopicName: %s %s", m.TopicName, m.Payload)
+				//log.Debug("TopicName: %s %s", m.TopicName, m.Payload)
 				targets := self.Qlobber.Match(m.TopicName)
 
 				if m.TopicName[0:1] == "#" {
@@ -226,8 +259,11 @@ func (self *Momonga) Run() {
 							self.OutGoingTable.Register2(x.PacketIdentifier, x, len(targets), sender)
 						}
 					}
-					log.Debug("sending publish message to %s [%s %s %d %d]", targets[i].(Connection).GetId(), x.TopicName, x.Payload, x.PacketIdentifier, x.QosLevel)
+					//log.Debug("sending publish message to %s [%s %s %d %d]", targets[i].(Connection).GetId(), x.TopicName, x.Payload, x.PacketIdentifier, x.QosLevel)
 					cn.WriteMessageQueue(x)
+
+					// TODO: for now
+					self.System.Broker.Messages.Sent++
 				}
 				break
 			default:

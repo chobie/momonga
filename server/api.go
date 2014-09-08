@@ -4,6 +4,7 @@ import (
 	"github.com/chobie/momonga/configuration"
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
+	"time"
 )
 
 const KILOBYTE = 1024
@@ -24,6 +25,7 @@ func NewMomongaServer(conf *configuration.Config) (*MomongaServer, error) {
 			SubscribeMap:  map[string]string{},
 			RetryMap:      map[string][]*Retryable{},
 			ErrorChannel:  make(chan *Retryable, 8192),
+			Started: time.Now(),
 		},
 	}
 	server.listenAddress = conf.GetListenAddress()
