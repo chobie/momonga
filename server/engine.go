@@ -181,6 +181,7 @@ func (self *Momonga) RunMaintenanceThread() {
 //		default:
 			// TODO: だれかがsubscribeしてる時だけ出力する
 			// TODO: implement whole stats
+		if self.EnableSys {
 			now := time.Now()
 			self.System.Broker.Broker.Uptime = int(now.Sub(self.Started) / 1e9)
 			self.sendMessage("$SYS/broker/broker/uptime", []byte(fmt.Sprintf("%d", self.System.Broker.Broker.Uptime)), 0)
@@ -198,7 +199,7 @@ func (self *Momonga) RunMaintenanceThread() {
 			self.sendMessage("$SYS/broker/load/bytes/sent", []byte(fmt.Sprintf("%d", 0)), 0)
 			self.sendMessage("$SYS/broker/load/bytes/received", []byte(fmt.Sprintf("%d", 0)), 0)
 			self.sendMessage("$SYS/broker/subscriptions/count", []byte(fmt.Sprintf("%d", 0)), 0)
-//		}
+		}
 
 		time.Sleep(time.Second)
 	}

@@ -26,6 +26,7 @@ func NewMomongaServer(conf *configuration.Config) (*MomongaServer, error) {
 			RetryMap:      map[string][]*Retryable{},
 			ErrorChannel:  make(chan *Retryable, 8192),
 			Started: time.Now(),
+			EnableSys: true,
 		},
 	}
 	server.listenAddress = conf.GetListenAddress()
