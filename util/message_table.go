@@ -1,9 +1,15 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package util
 
+// TODO: goroutine safe
 import (
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"time"
 	"errors"
+	"sync"
 )
 
 type MessageContainer struct {
@@ -15,6 +21,7 @@ type MessageContainer struct {
 }
 
 type MessageTable struct {
+	sync.RWMutex
 	Id uint16
 	Hash map[uint16]*MessageContainer
 	OnFinish func(uint16, codec.Message, interface{})
@@ -32,6 +39,8 @@ func (self *MessageTable) SetOnFinish(callback func(uint16, codec.Message, inter
 }
 
 func (self *MessageTable) NewId() uint16 {
+	self.Lock()
+	defer self.Unlock()
 	if self.Id == 65535 {
 		self.Id = 0
 	}
@@ -41,10 +50,14 @@ func (self *MessageTable) NewId() uint16 {
 }
 
 func (self *MessageTable) Clean() {
+	self.Lock()
+	defer self.Unlock()
 	self.Hash = make(map[uint16]*MessageContainer)
 }
 
 func (self *MessageTable) Get(id uint16) (codec.Message, error) {
+	self.RLock()
+	defer self.RUnlock()
 	if v, ok := self.Hash[id]; ok {
 		return v.Message, nil
 	}
@@ -53,6 +66,8 @@ func (self *MessageTable) Get(id uint16) (codec.Message, error) {
 
 
 func (self *MessageTable) Register(id uint16, message codec.Message, opaque interface{}) {
+	self.Lock()
+	defer self.Unlock()
 	self.Hash[id] = &MessageContainer{
 		Message: message,
 		Refcount: 1,
@@ -63,6 +78,8 @@ func (self *MessageTable) Register(id uint16, message codec.Message, opaque inte
 }
 
 func (self *MessageTable) Register2(id uint16, message codec.Message, count int, opaque interface{}) {
+	self.Lock()
+	defer self.Unlock()
 	self.Hash[id] = &MessageContainer{
 		Message: message,
 		Refcount: count,
@@ -73,6 +90,8 @@ func (self *MessageTable) Register2(id uint16, message codec.Message, count int,
 }
 
 func (self *MessageTable) Unref(id uint16) {
+	self.Lock()
+	defer self.Unlock()
 	if v, ok := self.Hash[id]; ok {
 		v.Refcount--
 
@@ -86,6 +105,8 @@ func (self *MessageTable) Unref(id uint16) {
 }
 
 func (self *MessageTable) Remove(id uint16) {
+	self.Lock()
+	defer self.Unlock()
 	if _, ok := self.Hash[id]; ok {
 		delete(self.Hash, id)
 	}

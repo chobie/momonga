@@ -1,3 +1,7 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package server
 
 import (
@@ -38,8 +42,9 @@ func (e *ConnectionResetError) Error() string {
 }
 
 type Connection interface {
-	WriteMessage(request mqtt.Message) error
+	//WriteMessage(request mqtt.Message) error
 	WriteMessageQueue(request mqtt.Message)
+	WriteMessageQueue2(msg []byte)
 	Close() error
 	SetState(State)
 	GetState() State
@@ -50,9 +55,8 @@ type Connection interface {
 	GetWillMessage() *mqtt.WillMessage
 	HasWillMessage() bool
 	GetOutGoingTable() *util.MessageTable
-	GetSubscribedTopicQos(string) int
-	GetSubscribedTopics() map[string]int
-	AppendSubscribedTopic(string, int)
+	GetSubscribedTopics() map[string]*SubscribeSet
+	AppendSubscribedTopic(string, *SubscribeSet)
 	RemoveSubscribedTopic(string)
 	SetKeepaliveInterval(int)
 	GetId() string

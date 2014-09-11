@@ -1,3 +1,7 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package mqtt
 
 import (
@@ -50,6 +54,7 @@ func (self *SubscribeMessage) decode(reader io.Reader) error {
 		binary.Read(reader, binary.BigEndian, &length)
 
 		_, _ = io.CopyN(buffer, reader, int64(length))
+
 		m.TopicPath = string(buffer.Bytes())
 		binary.Read(reader, binary.BigEndian, &m.RequestedQos)
 		self.Payload = append(self.Payload, m)

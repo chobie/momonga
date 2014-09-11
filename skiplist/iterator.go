@@ -1,3 +1,7 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package skiplist
 
 func (self *SkipList) Iterator() *SkipListIterator {
@@ -50,7 +54,11 @@ func (self *SkipListIterator) Valid() bool {
 }
 
 func (self *SkipListIterator) Next() {
-	self.Node = self.Node.Level[0].Forward
+	if v, ok := self.Node.Level[0]; ok {
+		self.Node = v.Forward
+	} else {
+		self.Node = nil
+	}
 }
 
 func (self *SkipListIterator) Rewind() {

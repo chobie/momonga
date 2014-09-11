@@ -1,33 +1,33 @@
-/*
-This library ported from davedoesdev/qlobber
-
-Copyright (c) 2013 David Halls <https://github.com/davedoesdev/>
-Copyright (c) 2014 Shuhei Tanuma <https://github.com/chobie/>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is furnished
-to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
- */
+// This library ported from davedoesdev/qlobber
+//
+// Copyright (c) 2013 David Halls <https://github.com/davedoesdev/>
+// Copyright (c) 2014 Shuhei Tanuma <https://github.com/chobie/>
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is furnished
+// to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 
 package util
 
 import (
 	"strings"
 	"reflect"
+	"sync"
+	"fmt"
 )
 
 type QlobberTrie struct {
@@ -40,6 +40,8 @@ type Qlobber struct {
 	WildcardSome string
 	WildcardOne string
 	QlobberTrie *QlobberTrie
+	Mutex *sync.RWMutex
+	Cache map[string][]interface {}
 }
 
 func NewQlobber() *Qlobber {
@@ -48,6 +50,8 @@ func NewQlobber() *Qlobber {
 			Collections: make([]interface{}, 0),
 			Trie: make(map[string]*QlobberTrie),
 		},
+		Cache: make(map[string][]interface{}),
+		Mutex: &sync.RWMutex{},
 	}
 	q.Separator = "/"
 	q.WildcardOne = "+"
@@ -56,8 +60,21 @@ func NewQlobber() *Qlobber {
 }
 
 func (self *Qlobber) Match(Topic string) []interface{} {
+	self.Mutex.RLock()
+	if v, ok := self.Cache[Topic]; ok && v != nil {
+		//self.Mutex.RUnlock()
+		//return v
+	}
+
 	var v []interface{}
-	return self.match(v, 0, strings.Split(Topic, self.Separator), self.QlobberTrie);
+	result := self.match(v, 0, strings.Split(Topic, self.Separator), self.QlobberTrie);
+	self.Mutex.RUnlock()
+
+	self.Mutex.Lock()
+	self.Cache[Topic] = result
+	self.Mutex.Unlock()
+
+	return result
 }
 
 func (self *Qlobber) match(v []interface{}, length int, words []string, sub_trie *QlobberTrie) []interface{} {
@@ -93,6 +110,10 @@ func (self *Qlobber) match(v []interface{}, length int, words []string, sub_trie
 }
 
 func (self *Qlobber) Add(Topic string, Value interface{}) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
+	self.Cache[Topic] = nil
+
 	self.add(Value, 0, strings.Split(Topic, self.Separator), self.QlobberTrie)
 }
 
@@ -122,11 +143,22 @@ func (self *Qlobber) remove(val interface{}, i int, words []string, sub_trie *Ql
 			sub_trie.Collections = make([]interface{}, 0)
 			sub_trie.Trie = make(map[string]*QlobberTrie)
 		} else {
-			sf2 := reflect.ValueOf(val)
-			for o := 0; o < len(sub_trie.Collections); o++ {
-				sf1 := reflect.ValueOf(sub_trie.Collections[o])
-				if sf1.Pointer() == sf2.Pointer() {
-					sub_trie.Collections = append(sub_trie.Collections[:o], sub_trie.Collections[o+1:]...)
+			switch val.(type){
+			case string:
+				for o := 0; o < len(sub_trie.Collections); o++ {
+					sf1 := sub_trie.Collections[o].(string)
+					if sf1 == val {
+						sub_trie.Collections = append(sub_trie.Collections[:o], sub_trie.Collections[o+1:]...)
+					}
+				}
+			// TODO: 対応していない奴はpanicしておきたいんだけど
+			default:
+				sf2 := reflect.ValueOf(val)
+				for o := 0; o < len(sub_trie.Collections); o++ {
+					sf1 := reflect.ValueOf(sub_trie.Collections[o])
+					if sf1.Pointer() == sf2.Pointer() {
+						sub_trie.Collections = append(sub_trie.Collections[:o], sub_trie.Collections[o+1:]...)
+					}
 				}
 			}
 		}
@@ -156,5 +188,30 @@ func (self *Qlobber) remove(val interface{}, i int, words []string, sub_trie *Ql
 }
 
 func (self *Qlobber) Remove(Topic string, val interface{}) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
+	//self.Cache[Topic] = nil
+
 	self.remove(val, 0, strings.Split(Topic, self.Separator), self.QlobberTrie);
+}
+
+func (self *Qlobber) Dump() {
+	self.dump(self.QlobberTrie, 0)
+}
+
+
+func (self *Qlobber) dump(sub_trie *QlobberTrie, level int) {
+	ls := strings.Repeat(" ", level * 2)
+	for offset := range sub_trie.Collections {
+		w := sub_trie.Collections[offset]
+		fmt.Printf("%s`%s\n", ls, w)
+	}
+
+	for k, v := range sub_trie.Trie {
+		if k == "" {
+			k = "root"
+		}
+		fmt.Printf("%s[%s]\n", ls, k)
+		self.dump(v, level + 1)
+	}
 }

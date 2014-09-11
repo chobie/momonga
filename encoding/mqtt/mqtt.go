@@ -1,3 +1,7 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package mqtt
 
 import (
@@ -200,6 +204,7 @@ func CopyMessage(msg Message) (Message, error) {
 // TODO: 読み込んだサイズ返す
 func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 	var message Message
+
 	header := FixedHeader{}
 	err := header.decode(reader)
 	if err != nil {
@@ -510,4 +515,53 @@ func Encode(message Message) ([]byte, error){
 	}
 
 	return buffer.Bytes(), nil
+}
+
+func Encode2(message Message) ([][]byte, int, error){
+	buffer := bytes.NewBuffer(nil)
+
+	switch message.GetType() {
+	case PACKET_TYPE_PUBLISH:
+		publish := message.(*PublishMessage)
+		var flag uint8 = uint8(publish.Type << 0x04)
+
+		// TODO: Dup flag
+		if publish.Retain > 0{
+			flag |= 0x01
+		}
+
+		if publish.QosLevel > 0 {
+			if publish.QosLevel == 1 {
+				flag |= 0x02
+			} else if publish.QosLevel == 2 {
+				flag |= 0x04
+			}
+		}
+
+		err := binary.Write(buffer, binary.BigEndian, flag)
+		if err != nil {
+			return nil, 0, fmt.Errorf("Error: %s\n", err)
+		}
+
+		// message encode
+		topic, identifier, payload, size := publish.Encode2()
+
+		err = binary.Write(buffer, binary.BigEndian, uint8(size))
+		if err != nil {
+			fmt.Printf("Error: %s\n", err)
+		}
+		header := buffer.Bytes()
+
+		return [][]byte{
+			header,
+			topic,
+			identifier,
+			payload,
+		}, size, nil
+
+	default:
+		fmt.Printf("Not supported message: %s", message.GetTypeAsString())
+	}
+
+	return nil, 0, fmt.Errorf("failed:")
 }

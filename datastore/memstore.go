@@ -1,10 +1,14 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package datastore
 
 import (
 	"errors"
 	"github.com/chobie/momonga/skiplist"
 	"bytes"
-	"fmt"
+	"sync"
 )
 
 type MemstoreIterator struct {
@@ -36,7 +40,7 @@ func (self *MemstoreIterator) Next() {
 }
 
 func (self *MemstoreIterator) Prev() {
-	panic("prev is not supported")
+	panic("prev is not supported yet")
 }
 
 func (self *MemstoreIterator) Valid() bool {
@@ -56,11 +60,13 @@ func NewMemstore() *Memstore {
 	return &Memstore{
 		Storage: skiplist.NewSkipList(&skiplist.BytesComparator{
 		}),
+		Mutex: &sync.RWMutex{},
 	}
 }
 
 type Memstore struct {
 	Storage *skiplist.SkipList
+	Mutex *sync.RWMutex
 }
 
 func (self *Memstore) Name() string {
@@ -68,38 +74,56 @@ func (self *Memstore) Name() string {
 }
 
 func (self *Memstore) Path() string {
-	return ""
+	return "inmemory"
 }
 
 func (self *Memstore) Put(key, value []byte) error {
+	self.Mutex.Lock()
+	defer func() {
+		self.Mutex.Unlock()
+	}()
+
+	self.Storage.Delete(key)
 	self.Storage.Insert(key, value)
 	return nil
 }
 
 func (self *Memstore) Get(key []byte) ([]byte, error) {
+	self.Mutex.RLock()
+	defer func() {
+		self.Mutex.RUnlock()
+	}()
+
 	itr := self.Iterator()
 	itr.Seek(key)
-
 	if itr.Valid() {
 		return itr.Value(), nil
-	} else {
-		fmt.Printf("damepo")
 	}
 
 	return nil, errors.New("not found")
 }
 
 func (self *Memstore) Del(first, last []byte) error {
+	self.Mutex.RLock()
 	itr := self.Iterator()
 
+	var targets [][]byte
 	for itr.Seek(first); itr.Valid(); itr.Next() {
 		key := itr.Key()
+		// The result will be 0 if a==b, -1 if a < b, and +1 if a > b.
 		if bytes.Compare(key, last) > 0{
 			break
 		}
-
-		self.Storage.Delete(key)
+		targets = append(targets, key)
 	}
+	self.Mutex.RUnlock()
+
+	// MEMO: this is more safely.
+	self.Mutex.Lock()
+	for i := range targets {
+		self.Storage.Delete(targets[i])
+	}
+	self.Mutex.Unlock()
 
 	return nil
 }

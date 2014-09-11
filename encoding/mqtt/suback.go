@@ -1,3 +1,7 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package mqtt
 
 import (
@@ -15,13 +19,12 @@ type SubackMessage struct {
 func (self *SubackMessage) encode() ([]byte, int, error) {
 	buffer := bytes.NewBuffer(nil)
 	var total int = 0
-	var QoS uint8 = 0
 
 	binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
 	total += 2
-	// TODO: 実装ちゃんとやる
-	binary.Write(buffer, binary.BigEndian, QoS)
-	total += 1
+
+	io.Copy(buffer, bytes.NewReader(self.Qos))
+	total += len(self.Qos)
 
 	return buffer.Bytes(), total, nil
 }

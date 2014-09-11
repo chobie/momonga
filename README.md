@@ -13,8 +13,7 @@ This might contains some unreliable codes. Yes, contributions are very welcome.
 # Features
 
 * MQTT 3.1.1 compliant
-  (Also allows 3.1 connections, but don't interested previous implementation)
-* QoS 0, 1, 2 (I don't say momonga guarantees QoS policy. Especially, error handling is poor)
+* QoS 0 supported. also QoS 1, 2 are available, although really suck implementation. don't rely it.
 
 Misc
 

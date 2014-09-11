@@ -1,3 +1,7 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package server
 
 import (
@@ -17,6 +21,7 @@ type MyConnection struct {
 	MyConnection       io.ReadWriteCloser
 	Events           map[string]interface{}
 	Queue            chan codec.Message
+	Queue2            chan []byte
 	OfflineQueue     []codec.Message
 	MaxOfflineQueue  int
 	InflightTable    *util.MessageTable
@@ -47,10 +52,12 @@ func (self *MyConnection) GetOpaque() interface{} {
 	return self.Opaque
 }
 
+// TODO: どっかで綺麗にしたい
 func NewMyConnection() *MyConnection {
 	c := &MyConnection{
 		Events:           make(map[string]interface{}),
-		Queue:            make(chan codec.Message, 8192),
+		Queue:            make(chan codec.Message, 1024),
+		Queue2:           make(chan []byte, 1024),
 		OfflineQueue:     make([]codec.Message, 0),
 		MaxOfflineQueue:  1000,
 		InflightTable:    util.NewMessageTable(),
@@ -197,20 +204,48 @@ func NewMyConnection() *MyConnection {
 	go func() {
 		for {
 			select {
-			case msg := <-c.Queue:
+			case data := <- c.Queue2:
+				log.Info("BINARY WRITER: %d", len(data))
+				remaining := len(data)
+				offset := 0
 
+				for offset < remaining {
+					size, err := c.Write(data[offset:])
+					if err != nil {
+						if nerr, ok := err.(net.Error); ok {
+							if !nerr.Temporary() {
+								log.Debug("NOT TEMPORARY ERROR: %s", err)
+								continue
+							}
+						}
+
+						if err.Error() == "use of closed network connection" {
+							continue
+						}
+
+						log.Error("WRITE ERROR: %s", err)
+					}
+					offset += size
+				}
+
+				c.invalidateTimer()
+			case msg := <-c.Queue:
 				if msg.GetType() == codec.PACKET_TYPE_PUBLISH {
 					sb := msg.(*codec.PublishMessage)
+					if sb.QosLevel < 0 {
+						log.Error("QoS under zero. %s: %#v", c.Id, sb)
+						break
+					}
 					if sb.QosLevel > 0 {
 						id := c.InflightTable.NewId()
 						sb.PacketIdentifier = id
 						c.InflightTable.Register(id, sb, nil)
 					}
+					//log.Info("sending PUBLISH [id:%d, qos:%d] %s %s to %s", sb.PacketIdentifier, sb.QosLevel, sb.TopicName, sb.Payload, c.GetId())
 				}
 
-				c.WriteMessage(msg)
+				c.writeMessage(msg)
 				c.invalidateTimer()
-				break
 			case <- c.Closed:
 				return
 			}
@@ -290,6 +325,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					c()
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	case "connect":
@@ -303,6 +340,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					c(p)
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	case "connack":
@@ -317,6 +356,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					c(result)
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	case "publish":
@@ -331,6 +372,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					c(message)
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	case "puback", "pubrec", "pubrel", "pubcomp", "unsuback":
@@ -344,6 +387,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					c(messageId)
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	case "subscribe":
@@ -357,6 +402,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					cv(p)
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 	case "suback":
 		if cv, ok := callback.(func(uint16, int)); ok {
@@ -369,6 +416,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					cv(messageId, grunted)
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	case "unsubscribe":
@@ -382,6 +431,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					cv(messageId, grunted, payload)
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	case "pingreq", "pingresp", "disconnect", "parsed":
@@ -395,6 +446,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					cv()
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	case "error":
@@ -408,6 +461,8 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 					cv(err)
 				}
 			}
+		} else {
+			panic(fmt.Sprintf("%s callback signature is wrong", event))
 		}
 		break
 	default:
@@ -450,7 +505,7 @@ func (self *MyConnection) ParseMessage() (codec.Message, error) {
 
 	message, err := codec.ParseMessage(self.MyConnection, 8192)
 	if err == nil {
-		//log.Debug("Read Message: [%s] %+v", message.GetTypeAsString(), message)
+		log.Debug("Read Message: [%s] %+v", message.GetTypeAsString(), message)
 
 		if v, ok := self.Events["parsed"]; ok {
 			if cb, ok := v.(func()); ok {
@@ -615,6 +670,11 @@ func (self *MyConnection) WriteMessageQueue(request codec.Message) {
 	self.Queue <- request
 }
 
+func (self *MyConnection) WriteMessageQueue2(msg []byte) {
+	self.Queue2 <- msg
+}
+
+
 func (self *MyConnection) Disconnect() {
 	log.Debug("Disconnect Operation")
 	self.Close()
@@ -677,31 +737,17 @@ func (self *MyConnection) ResetState() {
 	self.State = 0
 }
 
-func (self *MyConnection) GetSubscribedTopicQos(topic string) int {
-	v := self.Qlobber.Match(topic)
-	if len(v) > 0 {
-		if r, ok := v[0].(int); ok {
-			return r
-		}
-	}
-	return -1
+func (self *MyConnection) GetSubscribedTopics() map[string]*SubscribeSet {
+	panic("deprecated")
+	return nil
 }
 
-func (self *MyConnection) GetSubscribedTopics() map[string]int {
-	return self.SubscribedTopics
-}
-
-func (self *MyConnection) AppendSubscribedTopic(topic string, qos int) {
-	self.SubscribedTopics[topic] = qos
-	self.Qlobber.Add(topic, qos)
+func (self *MyConnection) AppendSubscribedTopic(topic string, set *SubscribeSet) {
+	panic("deprecated")
 }
 
 func (self *MyConnection) RemoveSubscribedTopic(topic string) {
-	self.Qlobber.Remove(topic, nil)
-
-	if _, ok := self.SubscribedTopics[topic]; ok {
-		delete(self.SubscribedTopics, topic)
-	}
+	panic("deprecated")
 }
 
 func (self *MyConnection) SetWillMessage(will codec.WillMessage) {
@@ -723,7 +769,8 @@ func (self *MyConnection) IsAlived() bool {
 	return true
 }
 
-func (self *MyConnection) WriteMessage(msg codec.Message) error {
+// Don't export
+func (self *MyConnection) writeMessage(msg codec.Message) error {
 	log.Debug("Write Message [%s]: %+v", msg.GetTypeAsString(), msg)
 
 	data, err := codec.Encode(msg)
@@ -742,7 +789,7 @@ func (self *MyConnection) WriteMessage(msg codec.Message) error {
 		if err != nil {
 			if nerr, ok := err.(net.Error); ok {
 				if !nerr.Temporary() {
-					log.Debug("NOT TEMP ERROR")
+					log.Debug("NOT TEMPORARY ERROR: %s", err)
 					return nerr
 				}
 			}

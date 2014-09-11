@@ -1,3 +1,7 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -10,9 +14,16 @@ import (
 	"strconv"
 	"io/ioutil"
 	"runtime"
+	_ "net/http/pprof"
+	"net/http"
 )
 
 func main() {
+	runtime.SetBlockProfileRate(1)
+	go func() {
+		http.ListenAndServe("0.0.0.0:6060", nil)
+	}()
+
 	foreGround := flag.Bool("foreground", true, "run as foreground")
 	configFile := flag.String("config", "config.toml", "the config file")
 	pidFile := flag.String("pidfile", "", "the pid file")

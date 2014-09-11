@@ -1,3 +1,7 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package client
 
 import (
@@ -192,13 +196,6 @@ func NewConnection() *Connection {
 						c.InflightTable.Register(id, sb, nil)
 					}
 
-					//					if v, ok := c.Events["publish"]; ok {
-					//						if cb, ok := v.(func(*codec.PublishMessage)); ok {
-					//							cb(sb)
-					//						} else {
-					//						}
-					//					}
-
 				}
 
 				b2, _ := codec.Encode(msg)
@@ -234,6 +231,7 @@ func NewConnection() *Connection {
 						})
 					}
 					c.invalidateTimer()
+
 				} else {
 					c.OfflineQueue = append(c.OfflineQueue, msg)
 					if len(c.OfflineQueue) > c.MaxOfflineQueue {

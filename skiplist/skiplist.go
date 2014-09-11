@@ -1,15 +1,16 @@
-/*
- * Copyright (c) 2014 Shuhei Tanuma <https://github.com/chobie/>
- *
- * This skiplist implementation is almost re implementation of the redis's
- * Skiplist implementation. As to understanding Skiplist algorithm and easy to re use.
- *
- * see also redis/src/t_zset.c
- *
- * Copyright (c) 2009-2012, Salvatore Sanfilippo <antirez at gmail dot com>
- * Copyright (c) 2009-2012, Pieter Noordhuis <pcnoordhuis at gmail dot com>
- *  All rights reserved.
- */
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+//
+// This skiplist implementation is almost re implementation of the redis's
+// Skiplist implementation. As to understanding Skiplist algorithm and easy to re use.
+//
+// see also redis/src/t_zset.c
+//   Copyright (c) 2009-2012, Salvatore Sanfilippo <antirez at gmail dot com>
+//   Copyright (c) 2009-2012, Pieter Noordhuis <pcnoordhuis at gmail dot com>
+// All rights reserved.
+//
+
 package skiplist
 
 import (
@@ -131,7 +132,7 @@ func (self *SkipList) Delete(score interface{}) {
 	}
 
 	node = node.Level[0].Forward
-	if node != nil && score == node.Score {
+	if node != nil && self.Comparator.Compare(score, node.Score) == 0 {
 		self.deleteNode(node, score, update)
 		freeSkipListNode(node)
 	}
@@ -148,7 +149,7 @@ func (self *SkipList) deleteNode(node *SkipListNode, score interface{}, update m
 	}
 
 	for self.Level > 1 && self.Header.Level[self.Level-1].Forward == nil {
-		self.Length--
+		self.Level--
 	}
 	self.Length--
 }

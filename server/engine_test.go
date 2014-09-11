@@ -3,7 +3,6 @@ package server
 import (
 	"github.com/chobie/momonga/configuration"
 	codec "github.com/chobie/momonga/encoding/mqtt"
-	"github.com/chobie/momonga/util"
 	log "github.com/chobie/momonga/logger"
 	. "gopkg.in/check.v1"
 	"testing"
@@ -60,17 +59,7 @@ func (m *MockConnection) SetWriteDeadline(t time.Time) error {
 }
 
 func CreateEngine() *Momonga {
-	return &Momonga{
-		Topics:        map[string]*Topic{},
-		Queue:         make(chan codec.Message, 8192),
-		OutGoingTable: util.NewMessageTable(),
-		Qlobber:       util.NewQlobber(),
-		Retain:        map[string]*codec.PublishMessage{},
-		Connections:   map[string]*MmuxConnection{},
-		SubscribeMap:  map[string]string{},
-		RetryMap:      map[string][]*Retryable{},
-		ErrorChannel:  make(chan *Retryable, 8192),
-	}
+	return NewMomonga()
 }
 //
 
@@ -95,7 +84,7 @@ func (s *EngineSuite) TestServerShouldCreateWithDefaultConfiguration(c *C) {
 }
 
 func (s *EngineSuite) TestBasic(c *C) {
-	log.SetupLogging("debug", "stdout")
+	log.SetupLogging("error", "stdout")
 
 	// This test introduce how to setup custom MQTT server
 
@@ -194,6 +183,60 @@ func (s *EngineSuite) TestBasic(c *C) {
 	time.Sleep(time.Millisecond)
 	r, err = conn.ParseMessage()
 	c.Assert(err, Equals, nil)
+
+	// That's it.
+	engine.Terminate()
+}
+
+
+func (s *EngineSuite) BenchmarkSimple(c *C) {
+	log.SetupLogging("error", "stdout")
+
+
+	engine := CreateEngine()
+	go engine.Run()
+
+	mock := &MockConnection{}
+	conn := NewMyConnection()
+	conn.SetMyConnection(mock)
+	conn.SetId("debug")
+
+	hndr := NewHandler(conn, engine)
+	conn.SetOpaque(hndr)
+
+	msg := codec.NewConnectMessage()
+	msg.Magic = []byte("MQTT")
+	msg.Version = uint8(4)
+	msg.Identifier = "debug"
+	msg.CleanSession = true
+	msg.KeepAlive = uint16(0) // Ping is annoyed at this time
+	b, _ := codec.Encode(msg)
+	io.Copy(mock, bytes.NewReader(b))
+
+	// 6) just call conn.ParseMessage(). then handler will work.
+	r, err := conn.ParseMessage()
+
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_CONNECT)
+
+	// NOTE: Client turn. don't care this.
+	time.Sleep(time.Millisecond)
+	r, err = conn.ParseMessage()
+	c.Assert(err, Equals, nil)
+	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_CONNACK)
+
+
+	for i := 0; i < c.N; i++ {
+		// (Client) Publish
+		pub := codec.NewPublishMessage()
+		pub.TopicName = "/debug"
+		pub.Payload = []byte("hello")
+		b, _ = codec.Encode(pub)
+		io.Copy(mock, bytes.NewReader(b))
+
+		// (Server)
+		conn.ParseMessage()
+	}
 
 	// That's it.
 	engine.Terminate()

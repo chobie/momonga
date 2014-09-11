@@ -1,10 +1,11 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package server
 
 import (
 	"github.com/chobie/momonga/configuration"
-	codec "github.com/chobie/momonga/encoding/mqtt"
-	"github.com/chobie/momonga/util"
-	"time"
 )
 
 const KILOBYTE = 1024
@@ -15,20 +16,9 @@ func NewMomongaServer(conf *configuration.Config) (*MomongaServer, error) {
 	server := &MomongaServer{
 		forceSSLUsers: map[string]bool{},
 		Connections:   map[string]Connection{},
-		Engine: &Momonga{
-			Topics:        map[string]*Topic{},
-			Queue:         make(chan codec.Message, 8192),
-			OutGoingTable: util.NewMessageTable(),
-			Qlobber:       util.NewQlobber(),
-			Retain:        map[string]*codec.PublishMessage{},
-			Connections:   map[string]*MmuxConnection{},
-			SubscribeMap:  map[string]string{},
-			RetryMap:      map[string][]*Retryable{},
-			ErrorChannel:  make(chan *Retryable, 8192),
-			Started: time.Now(),
-			EnableSys: true,
-		},
+		Engine: NewMomonga(),
 	}
+
 	server.listenAddress = conf.GetListenAddress()
 	server.SSLlistenAddress = conf.GetSSLListenAddress()
 	server.listenSocket = conf.GetSocketAddress()

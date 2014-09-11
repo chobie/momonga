@@ -2,13 +2,15 @@ package server
 
 import (
 	"crypto/tls"
+	"github.com/chobie/momonga/util"
 	log "github.com/chobie/momonga/logger"
 	"io"
 	"net"
-	"os"
+	_ "os"
 	"code.google.com/p/go.net/websocket"
 	"net/http"
 	"fmt"
+	"time"
 )
 
 type MomongaServer struct {
@@ -41,6 +43,8 @@ func (self *MomongaServer) SSLAvailable() bool {
 }
 
 func (self *MomongaServer) HandleConnection(conn Connection) {
+	hndr := NewHandler(conn, self.Engine)
+
 	for {
 		_, err := conn.ReadMessage()
 		if conn.GetState() == STATE_CLOSED {
@@ -48,31 +52,38 @@ func (self *MomongaServer) HandleConnection(conn Connection) {
 		}
 
 		if err != nil {
-			self.Engine.CleanSubscription(conn)
+			log.Debug("DISCONNECT: %s", conn.GetId())
+			// ここでmyconnがかえる場合はhandshake前に死んでる
+			//self.Engine.CleanSubscription(conn)
+			var ok bool
+			var mux *MmuxConnection
+
+			if mux, ok = self.Engine.Connections[conn.GetId()]; ok {
+			}
+
 			if _, ok := err.(*DisconnectError); !ok {
 				if conn.HasWillMessage() {
 					self.Engine.SendWillMessage(conn)
 				}
-			} else if err == io.EOF {
-				// nothing to do
-			} else {
-				log.Error("Handle Connection Error: %s", err)
+
+				if err == io.EOF {
+					// nothing to do
+				} else {
+					log.Error("Handle Connection Error: %s", err)
+				}
 			}
 
-			if mux, ok := self.Engine.Connections[conn.GetId()]; ok {
+			if mux != nil {
 				mux.Detach(conn)
 
 				if mux.ShouldClearSession() {
+					self.Engine.CleanSubscription(mux)
 					delete(self.Engine.Connections, mux.GetId())
-					delete(self.Connections, mux.GetId())
-					log.Debug("remove mux connection")
 				}
 			}
 
 			conn.Close()
-			// ここはテンポラリ接続の所?
-			delete(self.Connections, conn.GetId())
-			self.ConnectionCount--
+			hndr.Close()
 			return
 		}
 	}
@@ -97,7 +108,11 @@ func (self *MomongaServer) tcpListenAndServe() {
 			return
 		}
 	}
-	self.acceptLoop(server, nil)
+
+	// NOTE: for durability
+	for i := 0; i < 4; i++ {
+		go self.acceptLoop(server)
+	}
 }
 
 func (self *MomongaServer) tcpSSLListenAndServe() {
@@ -122,42 +137,48 @@ func (self *MomongaServer) tcpSSLListenAndServe() {
 			}
 		}
 
-		self.acceptLoop(server, nil)
+		self.acceptLoop(server)
 	}
 }
 
-func (self *MomongaServer) acceptLoop(listener net.Listener, yield func()) {
+func (self *MomongaServer) acceptLoop(listener net.Listener) {
 	defer func() {
 		listener.Close()
-		// これなんに使ってたんだっけ?
-		if yield != nil {
-			yield()
-		}
 	}()
+
+	var tempDelay time.Duration // how long to sleep on accept failure
 
 	for {
 		client, err := listener.Accept()
 		if err != nil {
-			log.Error("Accept Failed: ", err)
-			continue
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				if tempDelay == 0 {
+					tempDelay = 5 * time.Millisecond
+				} else {
+					tempDelay *= 2
+				}
+
+				if max := 1 * time.Second; tempDelay > max {
+					tempDelay = max
+				}
+
+				log.Info("momonga: Accept error: %v; retrying in %v", err, tempDelay)
+				time.Sleep(tempDelay)
+				continue
+			}
+			log.Error("Accept Failed: %s", err)
+			return
 		}
+		tempDelay = 0
 
 		if self.ConnectionCount > 100 {
 			// TODO: Send Error message and close connection immediately as we don't won't accept new connection.
 		}
 
 		conn := NewMyConnection()
-		hndr := NewHandler(conn, self.Engine)
-
-		conn.SetOpaque(hndr)
 		conn.SetMyConnection(client)
 		conn.SetId(client.RemoteAddr().String())
-
 		log.Debug("Accepted: %s", conn.GetId())
-		// これサーバー側でも確保する必要あるんかなぁ。
-		self.Connections[conn.GetId()] = conn
-		self.ConnectionCount++
-
 		go self.HandleConnection(conn)
 	}
 }
@@ -173,10 +194,8 @@ func (self *MomongaServer) unixListenAndServe() {
 			return
 		}
 	}
-
-	self.acceptLoop(server, func() {
-		os.Remove(self.listenSocket)
-	})
+	//os.Remove(self.listenSocket)
+	self.acceptLoop(server)
 }
 
 func (self *MomongaServer) RemoveConnection(conn Connection) {
@@ -196,7 +215,7 @@ func (self *MomongaServer) ListenAndServe() {
 	}
 
 	// TODO: 場所変える
-	if self.WebSocketPort > 0 {
+	//if self.WebSocketPort > 0 {
 		http.Handle(self.WebSocketMount, websocket.Handler(func(ws *websocket.Conn) {
 				conn := NewMyConnection()
 				conn.SetMyConnection(ws)
@@ -207,10 +226,58 @@ func (self *MomongaServer) ListenAndServe() {
 				self.HandleConnection(conn)
 			}))
 
-		go http.ListenAndServe(fmt.Sprintf(":%d", self.WebSocketPort), nil)
-	}
+		// あるとべんりなのよねー
+		http.HandleFunc("/debug/retain", func (w http.ResponseWriter, r *http.Request) {
+				itr := self.Engine.DataStore.Iterator()
+				for ; itr.Valid(); itr.Next() {
+					k := string(itr.Key())
+					fmt.Fprintf(w, "<div>key: %s</div>", k)
+				}
+		})
+		http.HandleFunc("/debug/retain/clear", func (w http.ResponseWriter, r *http.Request) {
+				itr := self.Engine.DataStore.Iterator()
+				var targets []string
+				for ; itr.Valid();itr.Next() {
+					x := itr.Key()
+					targets = append(targets, string(x))
+				}
 
-	// TODO: pass concurrency parameter
+				for _, s := range targets {
+					self.Engine.DataStore.Del([]byte(s), []byte(s))
+				}
+				fmt.Fprintf(w, "<textarea>%#v</textarea>", self.Engine.DataStore)
+		})
+
+		http.HandleFunc("/debug/connection", func (w http.ResponseWriter, r *http.Request) {
+			for _, v := range self.Engine.Qlobber.Match("TopicA/C") {
+				fmt.Fprintf(w, "<div>%s</div>", v)
+			}
+		})
+		http.HandleFunc("/debug/connections", func (w http.ResponseWriter, r *http.Request) {
+				for _, v := range self.Engine.Connections {
+					fmt.Fprintf(w, "<div>%#v</div>", v)
+				}
+		})
+
+		http.HandleFunc("/debug/connections/clear", func (w http.ResponseWriter, r *http.Request) {
+			self.Engine.Connections = make(map[string]*MmuxConnection)
+			fmt.Fprintf(w, "cleared")
+		})
+
+		http.HandleFunc("/debug/qlobber/clear", func (w http.ResponseWriter, r *http.Request) {
+			self.Engine.Qlobber = util.NewQlobber()
+			fmt.Fprintf(w, "cleared")
+		})
+
+		http.HandleFunc("/debug/qlobber/dump", func (w http.ResponseWriter, r *http.Request) {
+			self.Engine.Qlobber.Dump()
+			fmt.Fprintf(w, "dumped")
+		})
+
+	go http.ListenAndServe(fmt.Sprintf(":%d", 9000), nil)
+	//}
+
+	// TODO: pass concurrency parameter. configでいいんじゃない
 	go self.Engine.Run()
 	self.Wakeup <- true
 

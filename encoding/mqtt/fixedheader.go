@@ -1,8 +1,14 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package mqtt
 
 import (
 	"encoding/binary"
 	"io"
+	"fmt"
+	"bytes"
 )
 
 type FixedHeader struct {
@@ -56,6 +62,35 @@ func (self *FixedHeader) GetTypeAsString() string {
 	}
 }
 
+func (self *FixedHeader) EncodeHeader(size uint8) ([]byte) {
+	var flag uint8 = uint8(self.Type << 0x04)
+
+	// TODO: Dup flag
+	if self.Retain > 0{
+		flag |= 0x01
+	}
+
+	if self.QosLevel > 0 {
+		if self.QosLevel == 1 {
+			flag |= 0x02
+		} else if self.QosLevel == 2 {
+			flag |= 0x04
+		}
+	}
+
+	buffer := bytes.NewBuffer(nil)
+	err := binary.Write(buffer, binary.BigEndian, flag)
+	if err != nil {
+		fmt.Printf("Error: %s\n", err)
+	}
+
+	err = binary.Write(buffer, binary.BigEndian, uint8(size))
+	if err != nil {
+		fmt.Printf("Error: %s\n", err)
+	}
+
+	return buffer.Bytes()
+}
 
 func (self *FixedHeader) decode(reader io.Reader) error {
 	var FirstByte uint8
