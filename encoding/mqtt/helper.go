@@ -9,7 +9,7 @@ import (
 	"io"
 )
 
-func ReadVarint(reader io.Reader) (int, error){
+func ReadVarint(reader io.Reader) (int, error) {
 	var RemainingLength uint8
 	m := 1
 	v := 0

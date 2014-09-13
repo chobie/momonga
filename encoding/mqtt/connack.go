@@ -7,13 +7,13 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"encoding/json"
+	"io"
 )
 
 type ConnackMessage struct {
 	FixedHeader
-	Reserved uint8
+	Reserved   uint8
 	ReturnCode uint8
 }
 
@@ -42,11 +42,10 @@ func (self ConnackMessage) WriteTo(w io.Writer) (int64, error) {
 	binary.Write(w, binary.BigEndian, self.Reserved)
 	binary.Write(w, binary.BigEndian, self.ReturnCode)
 
-	return int64(fsize)+size, nil
+	return int64(fsize) + size, nil
 }
 
 func (self *ConnackMessage) String() string {
 	b, _ := json.Marshal(self)
 	return string(b)
 }
-

@@ -4,18 +4,21 @@
 package server
 
 import (
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 )
 
 type Application struct {
-	Engine *Momonga
+	Engine  *Momonga
 	Servers []Server
-	wg sync.WaitGroup
+	wg      sync.WaitGroup
 }
 
-func NewApplication(engine *Momonga) *Application{
+func NewApplication(engine *Momonga) *Application {
 	app := &Application{
-		Engine: engine,
+		Engine:  engine,
 		Servers: make([]Server, 0),
 	}
 
@@ -24,13 +27,38 @@ func NewApplication(engine *Momonga) *Application{
 
 func (self *Application) Start() {
 	self.wg.Add(1)
-	go self.Engine.Run()
 
+	ch := make(chan os.Signal, 1)
+	signals := []os.Signal{syscall.SIGINT}
+	signal.Notify(ch, signals...)
+	go func(ch chan os.Signal) {
+		for {
+			select {
+			case x := <-ch:
+				switch x {
+				case syscall.SIGINT:
+					self.Stop()
+				}
+			}
+		}
+	}(ch)
+
+	go self.Engine.Run()
 	for i := 0; i < len(self.Servers); i++ {
 		svr := self.Servers[i]
 		go svr.ListenAndServe()
 		self.wg.Add(1)
 	}
+}
+
+func (self *Application) Stop() {
+	for i := 0; i < len(self.Servers); i++ {
+		svr := self.Servers[i]
+		svr.Stop()
+		self.wg.Done()
+	}
+
+	self.wg.Done()
 }
 
 func (self *Application) Loop() {

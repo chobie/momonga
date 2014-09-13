@@ -7,17 +7,17 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
-	 "fmt"
 	"encoding/json"
+	"fmt"
+	"io"
 )
 
 type PublishMessage struct {
-	FixedHeader `json:"header"`
-	TopicName string `json:"topic_name"`
-	PacketIdentifier uint16 `json:"identifier"`
-	Payload []byte `json:"payload"`
-	Opaque interface{} `json:"-"`
+	FixedHeader      `json:"header"`
+	TopicName        string      `json:"topic_name"`
+	PacketIdentifier uint16      `json:"identifier"`
+	Payload          []byte      `json:"payload"`
+	Opaque           interface{} `json:"-"`
 }
 
 func (self *PublishMessage) decode(reader io.Reader) error {

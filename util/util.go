@@ -5,12 +5,12 @@
 package util
 
 import (
-	"strconv"
+	"crypto/rand"
+	log "github.com/chobie/momonga/logger"
 	"io/ioutil"
 	"os"
-	log "github.com/chobie/momonga/logger"
+	"strconv"
 	"syscall"
-	"crypto/rand"
 )
 
 func GenerateId(n int) string {
@@ -19,12 +19,11 @@ func GenerateId(n int) string {
 
 	rand.Read(bytes)
 	for i, b := range bytes {
-		bytes[i] = alphanum[b % byte(len(alphanum))]
+		bytes[i] = alphanum[b%byte(len(alphanum))]
 	}
 
 	return string(bytes)
 }
-
 
 func WritePid(pidFile string) {
 	if pidFile != "" {

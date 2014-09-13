@@ -4,11 +4,11 @@ import (
 	"net"
 )
 
-type Server interface{
+type Server interface {
 	ListenAndServe() error
 	//ListenAndServeTLS(certFile, keyFile string) error
 	Serve(l net.Listener) error
-//	Graceful()
-//	Stop()
-//	Restart()
+	//	Graceful()
+	Stop()
+	//	Restart()
 }

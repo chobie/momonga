@@ -4,9 +4,9 @@
 
 package mqtt
 
-import(
-	"io"
+import (
 	"encoding/json"
+	"io"
 )
 
 type PingreqMessage struct {

@@ -1,9 +1,9 @@
 package datastore
 
 import (
-	"testing"
-	. "gopkg.in/check.v1"
 	_ "fmt"
+	. "gopkg.in/check.v1"
+	"testing"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -39,7 +39,7 @@ func (s *DatastoreSuite) TestMemstore(c *C) {
 
 	itr := memstore.Iterator()
 	var targets []string
-	for ; itr.Valid();itr.Next() {
+	for ; itr.Valid(); itr.Next() {
 		x := itr.Key()
 		targets = append(targets, string(x))
 	}
@@ -51,14 +51,13 @@ func (s *DatastoreSuite) TestMemstore(c *C) {
 	c.Assert(err.Error(), Equals, "not found")
 
 	//	fmt.Printf("\n")
-//	for itr := memstore.Iterator(); itr.Valid(); itr.Next() {
-//		fmt.Printf("key: %s\n", itr.Key())
-//	}
+	//	for itr := memstore.Iterator(); itr.Valid(); itr.Next() {
+	//		fmt.Printf("key: %s\n", itr.Key())
+	//	}
 
 	//
-//	value, err = memstore.Get([]byte("key_nothing"))
-//	c.Assert(err.Error(), Equals, "not found")
-//	c.Assert(value, DeepEquals, []byte(nil))
-//
+	//	value, err = memstore.Get([]byte("key_nothing"))
+	//	c.Assert(err.Error(), Equals, "not found")
+	//	c.Assert(value, DeepEquals, []byte(nil))
+	//
 }
-

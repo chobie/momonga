@@ -7,19 +7,19 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
-	"errors"
 )
 
 func NewConnectMessage() *ConnectMessage {
 	message := &ConnectMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_CONNECT,
-			Dupe: false,
+			Type:     PACKET_TYPE_CONNECT,
+			Dupe:     false,
 			QosLevel: 0,
 		},
-		Magic: []byte("MQTT"),
+		Magic:   []byte("MQTT"),
 		Version: 4,
 	}
 	return message
@@ -28,8 +28,8 @@ func NewConnectMessage() *ConnectMessage {
 func NewSubscribeMessage() *SubscribeMessage {
 	message := &SubscribeMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_SUBSCRIBE,
-			Dupe: false,
+			Type:     PACKET_TYPE_SUBSCRIBE,
+			Dupe:     false,
 			QosLevel: 1, // Must be 1
 		},
 	}
@@ -39,8 +39,8 @@ func NewSubscribeMessage() *SubscribeMessage {
 func NewUnsubscribeMessage() *UnsubscribeMessage {
 	message := &UnsubscribeMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_UNSUBSCRIBE,
-			Dupe: false,
+			Type:     PACKET_TYPE_UNSUBSCRIBE,
+			Dupe:     false,
 			QosLevel: 1, // Must be 1
 		},
 	}
@@ -50,8 +50,8 @@ func NewUnsubscribeMessage() *UnsubscribeMessage {
 func NewUnsubackMessage() *UnsubackMessage {
 	message := &UnsubackMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_UNSUBACK,
-			Dupe: false,
+			Type:     PACKET_TYPE_UNSUBACK,
+			Dupe:     false,
 			QosLevel: 0,
 		},
 	}
@@ -61,32 +61,31 @@ func NewUnsubackMessage() *UnsubackMessage {
 func NewSubackMessage() *SubackMessage {
 	message := &SubackMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_SUBACK,
-			Dupe: false,
+			Type:     PACKET_TYPE_SUBACK,
+			Dupe:     false,
 			QosLevel: 0,
 		},
 	}
 
 	return message
 }
-
 
 func NewPublishMessage() *PublishMessage {
 	message := &PublishMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_PUBLISH,
-			Dupe: false,
+			Type:     PACKET_TYPE_PUBLISH,
+			Dupe:     false,
 			QosLevel: 0,
 		},
 	}
 	return message
 }
 
-func NewPubackMessage() *PubackMessage{
+func NewPubackMessage() *PubackMessage {
 	message := &PubackMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_PUBACK,
-			Dupe: false,
+			Type:     PACKET_TYPE_PUBACK,
+			Dupe:     false,
 			QosLevel: 0,
 		},
 	}
@@ -94,11 +93,11 @@ func NewPubackMessage() *PubackMessage{
 	return message
 }
 
-func NewPubrecMessage() *PubrecMessage{
+func NewPubrecMessage() *PubrecMessage {
 	message := &PubrecMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_PUBREC,
-			Dupe: false,
+			Type:     PACKET_TYPE_PUBREC,
+			Dupe:     false,
 			QosLevel: 0,
 		},
 	}
@@ -106,23 +105,23 @@ func NewPubrecMessage() *PubrecMessage{
 	return message
 }
 
-func NewPubrelMessage() *PubrelMessage{
+func NewPubrelMessage() *PubrelMessage {
 	message := &PubrelMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_PUBREL,
-			Dupe: false,
-			QosLevel: 1,  // Must be 1
+			Type:     PACKET_TYPE_PUBREL,
+			Dupe:     false,
+			QosLevel: 1, // Must be 1
 		},
 	}
 
 	return message
 }
 
-func NewPubcompMessage() *PubcompMessage{
+func NewPubcompMessage() *PubcompMessage {
 	message := &PubcompMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_PUBCOMP,
-			Dupe: false,
+			Type:     PACKET_TYPE_PUBCOMP,
+			Dupe:     false,
 			QosLevel: 0,
 		},
 	}
@@ -148,7 +147,7 @@ func NewPingrespMessage() *PingrespMessage {
 	return message
 }
 
-func NewDisconnectMessage() *DisconnectMessage{
+func NewDisconnectMessage() *DisconnectMessage {
 	message := &DisconnectMessage{
 		FixedHeader: FixedHeader{
 			Type: PACKET_TYPE_DISCONNECT,
@@ -160,7 +159,7 @@ func NewDisconnectMessage() *DisconnectMessage{
 func NewConnackMessage() *ConnackMessage {
 	message := &ConnackMessage{
 		FixedHeader: FixedHeader{
-			Type: PACKET_TYPE_CONNACK,
+			Type:     PACKET_TYPE_CONNACK,
 			QosLevel: 0,
 		},
 	}
@@ -179,7 +178,7 @@ func CopyPublishMessage(msg *PublishMessage) (*PublishMessage, error) {
 func CopyMessage(msg Message) (Message, error) {
 	var result Message
 
-	switch (msg.GetType()) {
+	switch msg.GetType() {
 	case PACKET_TYPE_PUBLISH:
 		t := msg.(*PublishMessage)
 		c := NewPublishMessage()
@@ -216,12 +215,12 @@ func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 	}
 
 	switch header.GetType() {
-		case PACKET_TYPE_CONNECT:
-			mm := &ConnectMessage{
-				FixedHeader: header,
-			}
-			mm.decode(reader)
-			message = mm
+	case PACKET_TYPE_CONNECT:
+		mm := &ConnectMessage{
+			FixedHeader: header,
+		}
+		mm.decode(reader)
+		message = mm
 	case PACKET_TYPE_CONNACK:
 		mm := &ConnackMessage{
 			FixedHeader: header,
@@ -304,14 +303,13 @@ func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 	return message, nil
 }
 
-
-func Encode(message Message) ([]byte, error){
+func Encode(message Message) ([]byte, error) {
 	buffer := bytes.NewBuffer(nil)
 
 	switch message.GetType() {
 	case PACKET_TYPE_CONNECT:
 		connect := message.(*ConnectMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 0x4))
+		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<0x4))
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 		}
@@ -329,7 +327,7 @@ func Encode(message Message) ([]byte, error){
 		break
 	case PACKET_TYPE_CONNACK:
 		connect := message.(*ConnackMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 0x4))
+		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<0x4))
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 		}
@@ -349,7 +347,7 @@ func Encode(message Message) ([]byte, error){
 		var flag uint8 = uint8(connect.Type << 0x04)
 
 		// TODO: Dup flag
-		if connect.Retain > 0{
+		if connect.Retain > 0 {
 			flag |= 0x01
 		}
 
@@ -379,7 +377,7 @@ func Encode(message Message) ([]byte, error){
 		break
 	case PACKET_TYPE_SUBSCRIBE:
 		connect := message.(*SubscribeMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 0x04 | 0x02))
+		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<0x04|0x02))
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 		}
@@ -397,7 +395,7 @@ func Encode(message Message) ([]byte, error){
 
 	case PACKET_TYPE_SUBACK:
 		connect := message.(*SubackMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 0x04))
+		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<0x04))
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 		}
@@ -415,7 +413,7 @@ func Encode(message Message) ([]byte, error){
 
 	case PACKET_TYPE_UNSUBSCRIBE:
 		connect := message.(*UnsubscribeMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4 | 0x02))
+		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4|0x02))
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 		}
@@ -435,13 +433,13 @@ func Encode(message Message) ([]byte, error){
 		var remaining uint8 = 0
 
 		connect := message.(*DisconnectMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4))
+		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
 		binary.Write(buffer, binary.BigEndian, remaining)
 		break
 
 	case PACKET_TYPE_UNSUBACK:
 		connect := message.(*UnsubackMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4))
+		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
 		raw, size, err := connect.encode()
 		binary.Write(buffer, binary.BigEndian, uint8(size))
 		if err != nil {
@@ -452,7 +450,7 @@ func Encode(message Message) ([]byte, error){
 
 	case PACKET_TYPE_PUBACK:
 		connect := message.(*PubackMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4))
+		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
 		raw, size, err := connect.encode()
 		binary.Write(buffer, binary.BigEndian, uint8(size))
 		if err != nil {
@@ -463,7 +461,7 @@ func Encode(message Message) ([]byte, error){
 
 	case PACKET_TYPE_PUBREC:
 		connect := message.(*PubrecMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4))
+		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
 		raw, size, err := connect.encode()
 		binary.Write(buffer, binary.BigEndian, uint8(size))
 		if err != nil {
@@ -474,7 +472,7 @@ func Encode(message Message) ([]byte, error){
 
 	case PACKET_TYPE_PUBREL:
 		connect := message.(*PubrelMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4 | 0x02))
+		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4|0x02))
 		raw, size, err := connect.encode()
 		binary.Write(buffer, binary.BigEndian, uint8(size))
 		if err != nil {
@@ -485,7 +483,7 @@ func Encode(message Message) ([]byte, error){
 
 	case PACKET_TYPE_PUBCOMP:
 		connect := message.(*PubcompMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4))
+		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
 		raw, size, err := connect.encode()
 		binary.Write(buffer, binary.BigEndian, uint8(size))
 		if err != nil {
@@ -498,7 +496,7 @@ func Encode(message Message) ([]byte, error){
 		var remaining uint8 = 0
 
 		connect := message.(*PingreqMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4))
+		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
 		binary.Write(buffer, binary.BigEndian, remaining)
 		break
 
@@ -506,7 +504,7 @@ func Encode(message Message) ([]byte, error){
 		var remaining uint8 = 0
 
 		connect := message.(*PingrespMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type << 4))
+		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
 		binary.Write(buffer, binary.BigEndian, remaining)
 		break
 
@@ -517,7 +515,7 @@ func Encode(message Message) ([]byte, error){
 	return buffer.Bytes(), nil
 }
 
-func WriteMessageTo(message Message, w io.Writer) (int64, error){
+func WriteMessageTo(message Message, w io.Writer) (int64, error) {
 	var written int64
 
 	switch message.GetType() {

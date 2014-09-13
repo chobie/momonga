@@ -7,15 +7,15 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"encoding/json"
+	"io"
 )
 
 type UnsubscribeMessage struct {
 	FixedHeader
-	TopicName string
+	TopicName        string
 	PacketIdentifier uint16
-	Payload []SubscribePayload
+	Payload          []SubscribePayload
 }
 
 func (self *UnsubscribeMessage) decode(reader io.Reader) error {

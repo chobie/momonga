@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-type Listener interface{
+type Listener interface {
 	Accept() (c net.Conn, err error)
 
 	Close() error

@@ -5,12 +5,12 @@
 package server
 
 import (
-	"github.com/chobie/momonga/encoding/mqtt"
-	"github.com/chobie/momonga/util"
-	log "github.com/chobie/momonga/logger"
-	"time"
-	"sync"
 	"bytes"
+	"github.com/chobie/momonga/encoding/mqtt"
+	log "github.com/chobie/momonga/logger"
+	"github.com/chobie/momonga/util"
+	"sync"
+	"time"
 )
 
 // MQTT Multiplexer Connection
@@ -30,22 +30,22 @@ type MmuxConnection struct {
 	Identifier        string
 	CleanSession      bool
 	OutGoingTable     *util.MessageTable
-	SubscribeMap map[string]bool
-	Created time.Time
-	Hash uint32
-	Mutex *sync.RWMutex
+	SubscribeMap      map[string]bool
+	Created           time.Time
+	Hash              uint32
+	Mutex             *sync.RWMutex
 	SubscribedTopics  map[string]*SubscribeSet
 }
 
 func NewMmuxConnection() *MmuxConnection {
 	conn := &MmuxConnection{
-		OutGoingTable: util.NewMessageTable(),
-		Connections:   map[string]Connection{},
-		SubscribeMap: map[string]bool{},
-		MaxOfflineQueue: 1000,
-		Created: time.Now(),
-		Identifier: "",
-		Mutex: &sync.RWMutex{},
+		OutGoingTable:    util.NewMessageTable(),
+		Connections:      map[string]Connection{},
+		SubscribeMap:     map[string]bool{},
+		MaxOfflineQueue:  1000,
+		Created:          time.Now(),
+		Identifier:       "",
+		Mutex:            &sync.RWMutex{},
 		SubscribedTopics: make(map[string]*SubscribeSet),
 	}
 

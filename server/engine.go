@@ -6,20 +6,21 @@ package server
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	_ "errors"
 	"fmt"
+	"github.com/chobie/momonga/configuration"
 	"github.com/chobie/momonga/datastore"
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
+	"io"
 	"regexp"
 	"strings"
-	"time"
 	"sync"
-	"encoding/hex"
-	"encoding/binary"
-	"encoding/json"
-	"io"
+	"time"
 )
 
 type DisconnectError struct {
@@ -34,9 +35,9 @@ type Retryable struct {
 }
 
 type SubscribeSet struct {
-	ClientId string `json:"client_id"`
+	ClientId    string `json:"client_id"`
 	TopicFilter string `json:"topic_filter"`
-	QoS int `json:"qos"`
+	QoS         int    `json:"qos"`
 }
 
 func (self *SubscribeSet) String() string {
@@ -46,23 +47,28 @@ func (self *SubscribeSet) String() string {
 
 // QoS 1, 2 are available. but really suck implementation.
 // reconsider qos design later.
-func NewMomonga() *Momonga {
+func NewMomonga(config *configuration.Config) *Momonga {
 	engine := &Momonga{
-		publishQueue:         make(chan *codec.PublishMessage, 8192),
+		publishQueue:  make(chan *codec.PublishMessage, config.GetQueueSize()),
 		OutGoingTable: util.NewMessageTable(),
 		Qlobber:       util.NewQlobber(),
 		Connections:   map[string]*MmuxConnection{},
 		RetryMap:      map[string][]*Retryable{},
-		ErrorChannel:  make(chan *Retryable, 8192),
-		Started: time.Now(),
-		EnableSys: false,
-		DataStore: datastore.NewMemstore(),
-		LockPool: map[uint32]*sync.RWMutex{},
+		ErrorChannel:  make(chan *Retryable, config.GetQueueSize()),
+		Started:       time.Now(),
+		EnableSys:     false,
+		DataStore:     datastore.NewMemstore(),
+		LockPool:      map[uint32]*sync.RWMutex{},
+		config:        config,
 	}
 
 	// initialize lock pool
-	for i := 0; i < 64; i++ {
+	for i := 0; i < config.GetLockPoolSize(); i++ {
 		engine.LockPool[uint32(i)] = &sync.RWMutex{}
+	}
+
+	if !config.Engine.EnableSys {
+		engine.DisableSys()
 	}
 
 	return engine
@@ -74,7 +80,7 @@ goroutine (2)
 	Run
 */
 type Momonga struct {
-	publishQueue         chan *codec.PublishMessage
+	publishQueue  chan *codec.PublishMessage
 	OutGoingTable *util.MessageTable
 	Qlobber       *util.Qlobber
 	// TODO: improve this.
@@ -86,6 +92,7 @@ type Momonga struct {
 	Started      time.Time
 	DataStore    datastore.Datastore
 	LockPool     map[uint32]*sync.RWMutex
+	config       *configuration.Config
 }
 
 func (self *Momonga) DisableSys() {
@@ -204,8 +211,8 @@ func (self *Momonga) Subscribe(p *codec.SubscribeMessage, conn Connection) {
 
 		set := &SubscribeSet{
 			TopicFilter: payload.TopicPath,
-			ClientId: conn.GetId(),
-			QoS: int(payload.RequestedQos),
+			ClientId:    conn.GetId(),
+			QoS:         int(payload.RequestedQos),
 		}
 		binary.Write(qosBuffer, binary.BigEndian, payload.RequestedQos)
 
@@ -227,7 +234,6 @@ func (self *Momonga) Subscribe(p *codec.SubscribeMessage, conn Connection) {
 	}
 	ack.Qos = qosBuffer.Bytes()
 
-
 	// MEMO: we can reply directly, no need to route, persite message.
 	log.Debug("Send Suback Message To: %s", conn.GetId())
 	conn.WriteMessageQueue(ack)
@@ -248,7 +254,7 @@ func (self *Momonga) SendMessage(topic string, message []byte, qos int) {
 	self.SendPublishMessage(msg)
 }
 
-func (self *Momonga) GetConnectionByClientId(clientId string) (*MmuxConnection, error){
+func (self *Momonga) GetConnectionByClientId(clientId string) (*MmuxConnection, error) {
 	hash := util.MurmurHash([]byte(clientId))
 	key := hash % 64
 
@@ -280,11 +286,11 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 	// TODO: Have to persist retain message.
 	if msg.Retain > 0 {
 		if len(msg.Payload) == 0 {
-			log.Debug("[DELETE RETAIN: %s]\n%s", msg.TopicName,hex.Dump([]byte(msg.TopicName)))
+			log.Debug("[DELETE RETAIN: %s]\n%s", msg.TopicName, hex.Dump([]byte(msg.TopicName)))
 
 			err := self.DataStore.Del([]byte(msg.TopicName), []byte(msg.TopicName))
 			if err != nil {
-			    log.Error("Error: %s\n", err)
+				log.Error("Error: %s\n", err)
 			}
 			// これ配送したらおかしいべ
 			log.Debug("Deleted retain: %s", msg.TopicName)
@@ -306,7 +312,8 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 		// (# or +) with Topic Names beginning with a $ character
 	}
 
-
+	// TODO: これ詰まるから各種コネクション側でやらないほうがいいよなー・・・
+	//
 	// list つくってからとって、だとタイミング的に居ない奴も出てくるんだよな。マジカオス
 	// ここで必要なのは, connection(clientId), subscribed qosがわかればあとは投げるだけ
 	// なんで、Qlobberがかえすのはであるべきなんだけど。これすっげー消しづらいのよね・・・
@@ -375,7 +382,7 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 				self.OutGoingTable.Register2(x.PacketIdentifier, x, len(targets), sender)
 			}
 		}
-		
+
 		x.Opaque = cn
 		self.publishQueue <- x
 	}
@@ -448,7 +455,7 @@ func (self *Momonga) Work() {
 			///self.RetryMap[r.Id] = append(self.RetryMap[r.Id], r)
 			log.Debug("ADD RETRYABLE MAP. But we don't do anything")
 			break
-		// TODO: 止めるやつつける
+			// TODO: 止めるやつつける
 		}
 	}
 }
@@ -457,11 +464,33 @@ func (self *Momonga) Run() {
 	go self.RunMaintenanceThread()
 
 	// TODO: use config
-	for i := 0; i < 4; i++ {
+	for i := 0; i < self.config.GetFanoutWorkerCount(); i++ {
 		go self.Work()
 	}
 }
 
+var (
+	V311_MAGIC   = []byte("MQTT")
+	V311_VERSION = uint8(4)
+	V3_MAGIC     = []byte("MQIsdp")
+	V3_VERSION   = uint8(3)
+)
+
+func (self *Momonga) checkVersion(p *codec.ConnectMessage) error {
+	if bytes.Compare(V311_MAGIC, p.Magic) == 0 {
+		if p.Version != V311_VERSION {
+			return fmt.Errorf("passed MQTT, but version is not 4")
+		}
+	} else if bytes.Compare(V3_MAGIC, p.Magic) == 0 {
+		if p.Version != V3_VERSION {
+			return fmt.Errorf("passed MQisdp, but version is not 3")
+		}
+	} else {
+		return fmt.Errorf("Unexpected version strings: %s", p.Magic)
+	}
+
+	return nil
+}
 
 func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *MmuxConnection {
 	log.Debug("handshaking: %s", p.Identifier)
@@ -472,17 +501,11 @@ func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *Mmu
 		return nil
 	}
 
-	if !(string(p.Magic) == "MQTT" || string(p.Magic) == "MQIsdp") {
+	if ok := self.checkVersion(p); ok != nil {
+		conn.Close()
 		log.Error("magic is not expected: %s  %+v\n", string(p.Magic), p)
 		conn.Close()
-		return nil
 	}
-
-	//log.Debug("CONNECT [%s]: %+v", conn.GetId(), conn)
-	// TODO: check version
-	//	for _, v := range self.Connections {
-	//		log.Debug("  Connection: %s", v.GetId())
-	//	}
 
 	// TODO: implement authenticator
 
@@ -582,11 +605,11 @@ func (self *Momonga) Unsubscribe(messageId uint16, granted int, payloads []codec
 	conn.WriteMessageQueue(ack)
 }
 
-
 func (self *Momonga) HandleConnection(conn Connection) {
 	hndr := NewHandler(conn, self)
 
 	for {
+		// TODO: change api name, actually this processes message
 		_, err := conn.ReadMessage()
 		if conn.GetState() == STATE_CLOSED {
 			err = &DisconnectError{}

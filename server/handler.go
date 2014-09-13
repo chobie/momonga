@@ -18,14 +18,14 @@ import (
 // 目指すところとしては、基本部分はデフォルトのHandlerで動くから
 // それで動かないところだけうわがいてね！って所。
 // Handler自体は受け渡ししかやらんのでlockしなくて大丈夫なはず
-type Handler struct{
-	Engine *Momonga
+type Handler struct {
+	Engine     *Momonga
 	Connection Connection
 }
 
 func NewHandler(conn Connection, engine *Momonga) *Handler {
 	hndr := &Handler{
-		Engine: engine,
+		Engine:     engine,
 		Connection: conn,
 	}
 

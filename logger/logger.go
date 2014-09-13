@@ -6,8 +6,8 @@ package logger
 
 import (
 	log "code.google.com/p/log4go"
-	"path/filepath"
 	"os"
+	"path/filepath"
 )
 
 func SetupLogging(loggingLevel, logFile string) {
@@ -53,4 +53,3 @@ func Error(message string, args ...interface{}) {
 func Debug(message string, args ...interface{}) {
 	log.Debug(message, args...)
 }
-

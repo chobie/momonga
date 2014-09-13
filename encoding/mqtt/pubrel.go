@@ -7,8 +7,8 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"encoding/json"
+	"io"
 )
 
 type PubrelMessage struct {
@@ -32,7 +32,6 @@ func (self *PubrelMessage) WriteTo(w io.Writer) (int64, error) {
 	binary.Write(w, binary.BigEndian, self.PacketIdentifier)
 	return int64(size) + int64(fsize), nil
 }
-
 
 func (self *PubrelMessage) decode(reader io.Reader) error {
 	binary.Read(reader, binary.BigEndian, &self.PacketIdentifier)

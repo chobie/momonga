@@ -5,15 +5,15 @@
 package main
 
 import (
+	"bufio"
+	"code.google.com/p/go.net/websocket"
 	"fmt"
-	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/client"
+	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/codegangsta/cli"
 	"io"
 	"net"
 	"os"
-	"bufio"
-	"code.google.com/p/go.net/websocket"
 )
 
 func publish(ctx *cli.Context) {
@@ -31,8 +31,8 @@ func publish(ctx *cli.Context) {
 			return conn, err
 		},
 		Keepalive: 10,
-		Magic:   []byte("MQIsdp"),
-		Version: 3,
+		Magic:     []byte("MQIsdp"),
+		Version:   3,
 	}
 
 	opt.UserName = ctx.String("u,user")
@@ -71,8 +71,8 @@ func subscribe(ctx *cli.Context) {
 			return conn, err
 		},
 		Keepalive: 10,
-		Magic:   []byte("MQIsdp"),
-		Version: 3,
+		Magic:     []byte("MQIsdp"),
+		Version:   3,
 	}
 
 	opt.UserName = ctx.String("u,user")

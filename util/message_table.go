@@ -6,31 +6,31 @@ package util
 
 // TODO: goroutine safe
 import (
-	codec "github.com/chobie/momonga/encoding/mqtt"
-	"time"
 	"errors"
+	codec "github.com/chobie/momonga/encoding/mqtt"
 	"sync"
+	"time"
 )
 
 type MessageContainer struct {
-	Message codec.Message
+	Message  codec.Message
 	Refcount int
-	Created time.Time
-	Updated time.Time
-	Opaque interface{}
+	Created  time.Time
+	Updated  time.Time
+	Opaque   interface{}
 }
 
 type MessageTable struct {
 	sync.RWMutex
-	Id uint16
-	Hash map[uint16]*MessageContainer
+	Id       uint16
+	Hash     map[uint16]*MessageContainer
 	OnFinish func(uint16, codec.Message, interface{})
-	used map[uint16]bool
+	used     map[uint16]bool
 }
 
 func NewMessageTable() *MessageTable {
 	return &MessageTable{
-		Id: 1,
+		Id:   1,
 		Hash: make(map[uint16]*MessageContainer),
 		used: make(map[uint16]bool),
 	}
@@ -78,15 +78,14 @@ func (self *MessageTable) Get(id uint16) (codec.Message, error) {
 	return nil, errors.New("not found")
 }
 
-
 func (self *MessageTable) Register(id uint16, message codec.Message, opaque interface{}) {
 	self.Lock()
 	self.Hash[id] = &MessageContainer{
-		Message: message,
+		Message:  message,
 		Refcount: 1,
-		Created: time.Now(),
-		Updated: time.Now(),
-		Opaque: opaque,
+		Created:  time.Now(),
+		Updated:  time.Now(),
+		Opaque:   opaque,
 	}
 	self.Unlock()
 }
@@ -94,11 +93,11 @@ func (self *MessageTable) Register(id uint16, message codec.Message, opaque inte
 func (self *MessageTable) Register2(id uint16, message codec.Message, count int, opaque interface{}) {
 	self.Lock()
 	self.Hash[id] = &MessageContainer{
-		Message: message,
+		Message:  message,
 		Refcount: count,
-		Created: time.Now(),
-		Updated: time.Now(),
-		Opaque: opaque,
+		Created:  time.Now(),
+		Updated:  time.Now(),
+		Opaque:   opaque,
 	}
 	self.Unlock()
 }

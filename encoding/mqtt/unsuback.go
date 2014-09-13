@@ -7,8 +7,8 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"encoding/json"
+	"io"
 )
 
 type UnsubackMessage struct {

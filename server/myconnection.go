@@ -5,46 +5,45 @@
 package server
 
 import (
+	"bufio"
 	"fmt"
-	log "github.com/chobie/momonga/logger"
 	codec "github.com/chobie/momonga/encoding/mqtt"
+	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
 	"io"
-	"bufio"
+	"net"
 	"sync"
 	"time"
-	"net"
 )
 
 const defaultBufferSize = 16 * 1024
 
 type MyConnection struct {
-	MyConnection       io.ReadWriteCloser
+	MyConnection     io.ReadWriteCloser
 	Events           map[string]interface{}
 	Queue            chan codec.Message
-	Queue2            chan []byte
+	Queue2           chan []byte
 	OfflineQueue     []codec.Message
 	MaxOfflineQueue  int
 	InflightTable    *util.MessageTable
 	SubscribeHistory map[string]int
 	PingCounter      int
 	Reconnect        bool
-	Balancer         *util.Balancer
 	Mutex            sync.RWMutex
 	Kicker           *time.Timer
 	Keepalive        int
 	Id               string
 	Qlobber          *util.Qlobber
-	WillMessage       *codec.WillMessage
-	SubscribedTopics  map[string]int
-	Opaque interface{}
-	Last time.Time
-	State State
-	CleanSession bool
-	Connected bool
-	Closed chan bool
-	Reader *bufio.Reader
-	Writer *bufio.Writer
+	WillMessage      *codec.WillMessage
+	SubscribedTopics map[string]int
+	Opaque           interface{}
+	Last             time.Time
+	State            State
+	CleanSession     bool
+	Connected        bool
+	Closed           chan bool
+	Reader           *bufio.Reader
+	Writer           *bufio.Writer
 }
 
 func (self *MyConnection) SetOpaque(opaque interface{}) {
@@ -65,18 +64,14 @@ func NewMyConnection() *MyConnection {
 		MaxOfflineQueue:  1000,
 		InflightTable:    util.NewMessageTable(),
 		SubscribeHistory: make(map[string]int),
-		Balancer: &util.Balancer{
-			// Writeは10req/secぐらいにおさえようず。クソ実装対策
-			PerSec: 10,
-		},
-		Mutex: sync.RWMutex{},
-		Qlobber: util.NewQlobber(),
+		Mutex:            sync.RWMutex{},
+		Qlobber:          util.NewQlobber(),
 		SubscribedTopics: make(map[string]int),
-		Last: time.Now(),
-		CleanSession: true,
-		Keepalive: 0,
-		State: STATE_INIT,
-		Closed: make(chan bool),
+		Last:             time.Now(),
+		CleanSession:     true,
+		Keepalive:        0,
+		State:            STATE_INIT,
+		Closed:           make(chan bool),
 	}
 
 	c.Events["connected"] = func() {
@@ -207,7 +202,7 @@ func NewMyConnection() *MyConnection {
 	go func() {
 		for {
 			select {
-			case data := <- c.Queue2:
+			case data := <-c.Queue2:
 				log.Info("BINARY WRITER: %d", len(data))
 				remaining := len(data)
 				offset := 0
@@ -249,7 +244,7 @@ func NewMyConnection() *MyConnection {
 
 				c.writeMessage(msg)
 				c.invalidateTimer()
-			case <- c.Closed:
+			case <-c.Closed:
 				return
 			}
 		}
@@ -272,9 +267,9 @@ func (self *MyConnection) SetMyConnection(c io.ReadWriteCloser) {
 func (self *MyConnection) Subscribe(topic string, QoS int) error {
 	sb := codec.NewSubscribeMessage()
 	sb.Payload = append(sb.Payload, codec.SubscribePayload{
-			TopicPath:    topic,
-			RequestedQos: uint8(QoS),
-		})
+		TopicPath:    topic,
+		RequestedQos: uint8(QoS),
+	})
 
 	id := self.InflightTable.NewId()
 	sb.PacketIdentifier = id
@@ -297,9 +292,9 @@ func (self *MyConnection) setupKicker() {
 
 	if self.Keepalive > 0 {
 		self.Kicker = time.AfterFunc(time.Second*time.Duration(self.Keepalive), func() {
-				self.Ping()
-				self.Kicker.Reset(time.Second * time.Duration(self.Keepalive))
-			})
+			self.Ping()
+			self.Kicker.Reset(time.Second * time.Duration(self.Keepalive))
+		})
 	}
 }
 
@@ -504,7 +499,7 @@ func (self *MyConnection) ReadMessage() (codec.Message, error) {
 func (self *MyConnection) ParseMessage() (codec.Message, error) {
 	if self.Keepalive > 0 {
 		if cn, ok := self.MyConnection.(net.Conn); ok {
-			cn.SetReadDeadline(self.Last.Add(time.Duration(int(float64(self.Keepalive) * 1.5)) * time.Second))
+			cn.SetReadDeadline(self.Last.Add(time.Duration(int(float64(self.Keepalive)*1.5)) * time.Second))
 		}
 	}
 
@@ -678,7 +673,6 @@ func (self *MyConnection) WriteMessageQueue(request codec.Message) {
 func (self *MyConnection) WriteMessageQueue2(msg []byte) {
 	self.Queue2 <- msg
 }
-
 
 func (self *MyConnection) Disconnect() {
 	log.Debug("Disconnect Operation")

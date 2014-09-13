@@ -19,7 +19,7 @@ func init() {
 }
 
 type MyHttpServer struct {
-	Engine *Momonga
+	Engine         *Momonga
 	WebSocketMount string
 }
 
@@ -62,7 +62,7 @@ func (self *MyHttpServer) debugRouter(w http.ResponseWriter, req *http.Request) 
 	case "/debug/retain/clear":
 		itr := self.Engine.DataStore.Iterator()
 		var targets []string
-		for ; itr.Valid();itr.Next() {
+		for ; itr.Valid(); itr.Next() {
 			x := itr.Key()
 			targets = append(targets, string(x))
 		}
@@ -148,7 +148,3 @@ func (self *MyHttpServer) getTopicFromQuery(req *http.Request) (url.Values, stri
 
 	return reqParams, topicName, nil
 }
-
-//srv := &libhttp.Server{Handler: p, ReadTimeout: self.readTimeout}
-//if err := srv.Serve(listener); err != nil && !strings.Contains(err.Error(), "closed network") {
-

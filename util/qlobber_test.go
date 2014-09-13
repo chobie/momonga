@@ -1,10 +1,10 @@
 package util
 
 import (
-	"testing"
-	. "gopkg.in/check.v1"
 	_ "fmt"
+	. "gopkg.in/check.v1"
 	"os"
+	"testing"
 )
 
 func Test(t *testing.T) { TestingT(t) }

@@ -6,21 +6,18 @@ package main
 
 import (
 	"flag"
-	"github.com/chobie/momonga/util"
-	"github.com/chobie/momonga/server"
-	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/configuration"
-	"os"
-	"strconv"
+	log "github.com/chobie/momonga/logger"
+	"github.com/chobie/momonga/server"
+	"github.com/chobie/momonga/util"
 	"io/ioutil"
+	"os"
 	"runtime"
+	"runtime/pprof"
+	"strconv"
 )
 
-func setupEngine(engine *server.Momonga, conf *configuration.Config) {
-	if !conf.Server.EnableSys {
-		engine.DisableSys()
-	}
-
+func setupEngine(engine *server.Momonga) {
 	//これハメだよなー
 	engine.SetupCallback()
 }
@@ -30,6 +27,13 @@ func main() {
 	configFile := flag.String("config", "config.toml", "the config file")
 	pidFile := flag.String("pidfile", "", "the pid file")
 	flag.Parse()
+
+	f, _ := os.Create("profiler")
+	pprof.StartCPUProfile(f)
+	defer func() {
+		pprof.StopCPUProfile()
+		os.Exit(0)
+	}()
 
 	conf, err := configuration.LoadConfiguration(*configFile)
 	if err != nil {
@@ -57,9 +61,8 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
-
-	engine := server.NewMomonga()
-	setupEngine(engine, conf)
+	engine := server.NewMomonga(conf)
+	setupEngine(engine)
 
 	t := server.NewTcpServer(engine, conf)
 	//u := server.NewUnixServer(engine, conf)
@@ -72,4 +75,6 @@ func main() {
 
 	app.Start()
 	app.Loop()
+
+	log.Info("Server finished")
 }

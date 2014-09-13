@@ -5,11 +5,11 @@
 package mqtt
 
 import (
-	"testing"
-	. "gopkg.in/check.v1"
 	"bytes"
 	"fmt"
-//	"encoding/hex"
+	. "gopkg.in/check.v1"
+	"testing"
+	//	"encoding/hex"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -29,7 +29,6 @@ func (s *MySuite) TestDecodePublishMessage(c *C) {
 	fmt.Printf("%s\n", xx)
 
 }
-
 
 func (s *MySuite) TestPublishMessage(c *C) {
 	m := NewPublishMessage()
@@ -214,7 +213,7 @@ func (s *MySuite) TestParseConnectMessage(c *C) {
 	msg.CleanSession = true
 	msg.KeepAlive = uint16(10)
 	msg.Will = &WillMessage{
-		Topic: "debug",
+		Topic:   "debug",
 		Message: "he",
 	}
 	a, _ := Encode(msg)
@@ -234,7 +233,7 @@ func (s *MySuite) BenchmarkParseConnectMessage(c *C) {
 	msg.CleanSession = true
 	msg.KeepAlive = uint16(10)
 	msg.Will = &WillMessage{
-		Topic: "debug",
+		Topic:   "debug",
 		Message: "he",
 	}
 	a, _ := Encode(msg)

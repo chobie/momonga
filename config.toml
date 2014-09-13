@@ -23,12 +23,6 @@ keyfile = ""
 	port = 8080
 
 [engine]
-allow_anonymous = true
-allow_duplicate_messages = true
-max_inflight_messages = 1000
-max_queued_messages = 1000
-retry_interval = 100
-queue_qos0_messages = true
-retained_persistence = true
-persistence = ""
-message_size_limit = 8192
+queue_size = 8192
+acceptor_count = "cpu"
+lock_pool_size = 64

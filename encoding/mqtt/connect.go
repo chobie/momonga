@@ -7,23 +7,23 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"fmt"
-//	"encoding/hex"
+	"io"
+	//	"encoding/hex"
 	"encoding/json"
 )
 
 type ConnectMessage struct {
 	FixedHeader
-	Magic        []byte `json:"magic"`
-	Version      uint8 `json:"version"`
-	Flag         uint8 `json:"flag"`
-	KeepAlive    uint16 `json:"keep_alive"`
-	Identifier   string `json:"identifier"`
+	Magic        []byte       `json:"magic"`
+	Version      uint8        `json:"version"`
+	Flag         uint8        `json:"flag"`
+	KeepAlive    uint16       `json:"keep_alive"`
+	Identifier   string       `json:"identifier"`
 	Will         *WillMessage `json:"will"`
-	CleanSession bool `json:clean_session`
-	UserName     string `json:"user_name"`
-	Password     string `json:"password"`
+	CleanSession bool         `json:clean_session`
+	UserName     string       `json:"user_name"`
+	Password     string       `json:"password"`
 }
 
 func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
@@ -38,10 +38,10 @@ func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
 	if (int(self.Flag)&0x04 > 0) && self.Will != nil {
 		size += self.Will.Size()
 	}
-	if int(self.Flag) & 0x80 > 0 {
+	if int(self.Flag)&0x80 > 0 {
 		size += 2 + len(self.UserName)
 	}
-	if int(self.Flag) & 0x40 > 0 {
+	if int(self.Flag)&0x40 > 0 {
 		size += 2 + len(self.Password)
 	}
 
@@ -83,19 +83,18 @@ func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
 		self.Will.WriteTo(w)
 	}
 
-	if int(self.Flag) & 0x80 > 0 {
+	if int(self.Flag)&0x80 > 0 {
 		Length = uint16(len(self.UserName))
 		err = binary.Write(w, binary.BigEndian, Length)
 		w.Write([]byte(self.UserName))
 	}
-	if int(self.Flag) & 0x40 > 0 {
+	if int(self.Flag)&0x40 > 0 {
 		Length = uint16(len(self.Password))
 		err = binary.Write(w, binary.BigEndian, Length)
 		w.Write([]byte(self.Password))
 	}
 	return int64(size), nil
 }
-
 
 func (self *ConnectMessage) encode() ([]byte, int, error) {
 	var headerLength uint16 = uint16(len(self.Magic))
@@ -145,14 +144,14 @@ func (self *ConnectMessage) encode() ([]byte, int, error) {
 		size += will_size
 	}
 
-	if int(self.Flag) & 0x80 > 0 {
+	if int(self.Flag)&0x80 > 0 {
 		Length = uint16(len(self.UserName))
 		err = binary.Write(buffer, binary.BigEndian, Length)
 		buffer.Write([]byte(self.UserName))
 		size += 2 + int(Length)
 	}
 
-	if int(self.Flag) & 0x40 > 0 {
+	if int(self.Flag)&0x40 > 0 {
 		Length = uint16(len(self.Password))
 		err = binary.Write(buffer, binary.BigEndian, Length)
 		buffer.Write([]byte(self.Password))
@@ -178,7 +177,7 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 	binary.Read(reader, binary.BigEndian, &Length)
 	offset += 2
 
-	self.Magic = buffer[offset:offset+int(Length)]
+	self.Magic = buffer[offset : offset+int(Length)]
 	offset += int(Length)
 
 	nr := bytes.NewReader(buffer[offset:])
@@ -193,23 +192,23 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 	offset += 2
 
 	if ClientIdentifierLength > 0 {
-		self.Identifier = string(buffer[offset:offset+int(ClientIdentifierLength)])
+		self.Identifier = string(buffer[offset : offset+int(ClientIdentifierLength)])
 		offset += int(ClientIdentifierLength)
 	}
 
-	if int(self.Flag) & 0x04 > 0 {
+	if int(self.Flag)&0x04 > 0 {
 		will := &WillMessage{}
 
 		nr := bytes.NewReader(buffer[offset:])
 		binary.Read(nr, binary.BigEndian, &ClientIdentifierLength)
 		offset += 2
-		will.Topic = string(buffer[offset:offset+int(ClientIdentifierLength)])
+		will.Topic = string(buffer[offset : offset+int(ClientIdentifierLength)])
 		offset += int(ClientIdentifierLength)
 
 		nr = bytes.NewReader(buffer[offset:])
 		binary.Read(nr, binary.BigEndian, &ClientIdentifierLength)
 		offset += 2
-		will.Message = string(buffer[offset:offset+int(ClientIdentifierLength)])
+		will.Message = string(buffer[offset : offset+int(ClientIdentifierLength)])
 		offset += int(ClientIdentifierLength)
 
 		if int(self.Flag)&0x32 > 0 {
@@ -221,23 +220,23 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 		self.Will = will
 	}
 
-	if int(self.Flag) & 0x80 > 0 {
+	if int(self.Flag)&0x80 > 0 {
 		nr := bytes.NewReader(buffer[offset:])
 		binary.Read(nr, binary.BigEndian, &Length)
 		offset += 2
-		self.UserName = string(buffer[offset:offset+int(Length)])
+		self.UserName = string(buffer[offset : offset+int(Length)])
 		offset += int(Length)
 	}
 
-	if int(self.Flag) & 0x40 > 0 {
+	if int(self.Flag)&0x40 > 0 {
 		nr := bytes.NewReader(buffer[offset:])
 		offset += 2
 		binary.Read(nr, binary.BigEndian, &Length)
-		self.Password = string(buffer[offset:offset+int(Length)])
+		self.Password = string(buffer[offset : offset+int(Length)])
 		offset += int(Length)
 	}
 
-	if int(self.Flag) & 0x02 > 0 {
+	if int(self.Flag)&0x02 > 0 {
 		self.CleanSession = true
 	}
 

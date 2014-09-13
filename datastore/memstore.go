@@ -5,9 +5,9 @@
 package datastore
 
 import (
+	"bytes"
 	"errors"
 	"github.com/chobie/momonga/skiplist"
-	"bytes"
 	"sync"
 )
 
@@ -58,15 +58,14 @@ func (self *MemstoreIterator) Close() error {
 
 func NewMemstore() *Memstore {
 	return &Memstore{
-		Storage: skiplist.NewSkipList(&skiplist.BytesComparator{
-		}),
-		Mutex: &sync.RWMutex{},
+		Storage: skiplist.NewSkipList(&skiplist.BytesComparator{}),
+		Mutex:   &sync.RWMutex{},
 	}
 }
 
 type Memstore struct {
 	Storage *skiplist.SkipList
-	Mutex *sync.RWMutex
+	Mutex   *sync.RWMutex
 }
 
 func (self *Memstore) Name() string {
@@ -111,7 +110,7 @@ func (self *Memstore) Del(first, last []byte) error {
 	for itr.Seek(first); itr.Valid(); itr.Next() {
 		key := itr.Key()
 		// The result will be 0 if a==b, -1 if a < b, and +1 if a > b.
-		if bytes.Compare(key, last) > 0{
+		if bytes.Compare(key, last) > 0 {
 			break
 		}
 		targets = append(targets, key)

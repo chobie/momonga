@@ -4,9 +4,9 @@
 
 package mqtt
 
-import(
-	"io"
+import (
 	"encoding/json"
+	"io"
 )
 
 type PingrespMessage struct {
@@ -20,7 +20,7 @@ func (self PingrespMessage) WriteTo(w io.Writer) (int64, error) {
 		return 0, err
 	}
 
-	return int64(fsize) + size,  nil
+	return int64(fsize) + size, nil
 }
 
 func (self *PingrespMessage) String() string {

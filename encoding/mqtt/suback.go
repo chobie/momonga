@@ -7,14 +7,14 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"encoding/json"
+	"io"
 )
 
 type SubackMessage struct {
 	FixedHeader
 	PacketIdentifier uint16
-	Qos []byte
+	Qos              []byte
 }
 
 func (self *SubackMessage) encode() ([]byte, int, error) {
@@ -43,8 +43,6 @@ func (self *SubackMessage) WriteTo(w io.Writer) (int64, error) {
 
 	return int64(size) + int64(fsize), nil
 }
-
-
 
 func (self *SubackMessage) decode(reader io.Reader) error {
 	var remaining uint8

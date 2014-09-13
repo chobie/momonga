@@ -1,28 +1,28 @@
 package server
 
-import(
-	"net"
-	"time"
-	log "github.com/chobie/momonga/logger"
+import (
 	"github.com/chobie/momonga/configuration"
+	log "github.com/chobie/momonga/logger"
+	"net"
 	"strings"
+	"time"
 )
 
 type UnixServer struct {
-	Engine *Momonga
+	Engine  *Momonga
 	Address string
 }
 
-func NewUnixServer(engine *Momonga, config *configuration.Config) *UnixServer{
+func NewUnixServer(engine *Momonga, config *configuration.Config) *UnixServer {
 	t := &UnixServer{
-		Engine: engine,
+		Engine:  engine,
 		Address: config.GetSocketAddress(),
 	}
 
 	return t
 }
 
-func (self *UnixServer) ListenAndServe() error{
+func (self *UnixServer) ListenAndServe() error {
 	listener, err := net.Listen("unix", self.Address)
 
 	if err != nil {
@@ -32,7 +32,7 @@ func (self *UnixServer) ListenAndServe() error{
 	return self.Serve(listener)
 }
 
-func (self *UnixServer) Serve(l net.Listener) error{
+func (self *UnixServer) Serve(l net.Listener) error {
 	log.Info("momonga_unix: started server")
 	defer func() {
 		l.Close()

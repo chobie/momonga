@@ -1,25 +1,25 @@
 package server
 
 import (
+	"bytes"
 	"github.com/chobie/momonga/configuration"
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	log "github.com/chobie/momonga/logger"
 	. "gopkg.in/check.v1"
-	"testing"
 	"io"
-	"os"
-	"bytes"
-	"time"
 	"net"
+	"os"
+	"testing"
+	"time"
 )
 
 // mock
 type MockConnection struct {
 	bytes.Buffer
 	Closed bool
-	Local mockAddr
+	Local  mockAddr
 	Remote mockAddr
-	Type int
+	Type   int
 }
 
 type mockAddr struct {
@@ -42,7 +42,7 @@ func (m *MockConnection) LocalAddr() net.Addr {
 	return &m.Local
 }
 
-func (m *MockConnection) RemoteAddr() net.Addr{
+func (m *MockConnection) RemoteAddr() net.Addr {
 	return &m.Remote
 }
 
@@ -59,10 +59,8 @@ func (m *MockConnection) SetWriteDeadline(t time.Time) error {
 }
 
 func CreateEngine() *Momonga {
-	return NewMomonga()
+	return NewMomonga(configuration.DefaultConfiguration())
 }
-//
-
 
 func Test(t *testing.T) { TestingT(t) }
 
@@ -110,7 +108,6 @@ func (s *EngineSuite) TestBasic(c *C) {
 
 	// 6) just call conn.ParseMessage(). then handler will work.
 	r, err := conn.ParseMessage()
-
 
 	c.Assert(err, Equals, nil)
 	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_CONNECT)
@@ -182,10 +179,8 @@ func (s *EngineSuite) TestBasic(c *C) {
 	engine.Terminate()
 }
 
-
 func (s *EngineSuite) BenchmarkSimple(c *C) {
 	log.SetupLogging("error", "stdout")
-
 
 	engine := CreateEngine()
 	go engine.Run()
@@ -218,7 +213,6 @@ func (s *EngineSuite) BenchmarkSimple(c *C) {
 	r, err = conn.ParseMessage()
 	c.Assert(err, Equals, nil)
 	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_CONNACK)
-
 
 	for i := 0; i < c.N; i++ {
 		// (Client) Publish

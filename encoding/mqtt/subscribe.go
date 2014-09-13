@@ -7,19 +7,19 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"encoding/json"
+	"io"
 )
 
 type SubscribePayload struct {
-	TopicPath string
+	TopicPath    string
 	RequestedQos uint8
 }
 
 type SubscribeMessage struct {
 	FixedHeader
 	PacketIdentifier uint16
-	Payload []SubscribePayload
+	Payload          []SubscribePayload
 }
 
 func (self *SubscribeMessage) encode() ([]byte, int, error) {
@@ -63,7 +63,6 @@ func (self *SubscribeMessage) WriteTo(w io.Writer) (int64, error) {
 
 	return int64(total), nil
 }
-
 
 func (self *SubscribeMessage) decode(reader io.Reader) error {
 	remaining := self.RemainingLength

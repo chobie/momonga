@@ -7,12 +7,12 @@ package client
 import (
 	"fmt"
 	codec "github.com/chobie/momonga/encoding/mqtt"
+	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
 	"io"
+	"net"
 	"sync"
 	"time"
-	"net"
-	log "github.com/chobie/momonga/logger"
 )
 
 type ConnectionState int

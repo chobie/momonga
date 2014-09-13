@@ -6,16 +6,16 @@ package mqtt
 
 import (
 	"encoding/binary"
-	"io"
-	"fmt"
 	"encoding/json"
+	"fmt"
+	"io"
 )
 
 type FixedHeader struct {
-	Type     PacketType
-	Dupe     bool
-	QosLevel int
-	Retain   int
+	Type            PacketType
+	Dupe            bool
+	QosLevel        int
+	Retain          int
 	RemainingLength int
 }
 
@@ -24,7 +24,7 @@ func (self *FixedHeader) GetType() PacketType {
 }
 
 func (self *FixedHeader) GetTypeAsString() string {
-	switch (self.Type) {
+	switch self.Type {
 	case PACKET_TYPE_RESERVED1:
 		return "unknown"
 	case PACKET_TYPE_CONNECT:
@@ -65,7 +65,7 @@ func (self *FixedHeader) GetTypeAsString() string {
 func (self *FixedHeader) writeTo(length uint8, w io.Writer) (int64, error) {
 	var flag uint8 = uint8(self.Type << 0x04)
 
-	if self.Retain > 0{
+	if self.Retain > 0 {
 		flag |= 0x01
 	}
 
@@ -109,7 +109,7 @@ func (self *FixedHeader) decode(reader io.Reader) error {
 	self.Type = PacketType(mt)
 	self.Dupe = ((flag & 0x08) > 0)
 
-	if (flag &0x01) > 0 {
+	if (flag & 0x01) > 0 {
 		self.Retain = 1
 	}
 
