@@ -79,7 +79,6 @@ func (self *MmuxConnection) Attach(conn Connection) {
 					self.WriteMessageQueue(self.OfflineQueue[i])
 				}
 				self.OfflineQueue = self.OfflineQueue[:0]
-				log.Info("Que Finished: %d, %d", len(self.OfflineQueue))
 			}
 		}
 	}
@@ -106,13 +105,6 @@ func (self *MmuxConnection) Detach(conn Connection) {
 		}
 	}
 }
-
-//func (self *MmuxConnection) WriteMessage(request mqtt.Message) error {
-//	if self.PrimaryConnection == nil {
-//		return nil
-//	}
-//	return self.PrimaryConnection.WriteMessage(request)
-//}
 
 func (self *MmuxConnection) WriteMessageQueue(request mqtt.Message) {
 	if self.PrimaryConnection == nil {

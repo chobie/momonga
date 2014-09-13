@@ -9,14 +9,15 @@ import (
 	"encoding/binary"
 	"io"
 	 "fmt"
+	"encoding/json"
 )
 
 type PublishMessage struct {
-	FixedHeader
-	TopicName string
-	PacketIdentifier uint16
-	Payload []byte
-	Opaque interface{}
+	FixedHeader `json:"header"`
+	TopicName string `json:"topic_name"`
+	PacketIdentifier uint16 `json:"identifier"`
+	Payload []byte `json:"payload"`
+	Opaque interface{} `json:"-"`
 }
 
 func (self *PublishMessage) decode(reader io.Reader) error {
@@ -50,6 +51,27 @@ func (self *PublishMessage) decode(reader io.Reader) error {
 	return nil
 }
 
+func (self *PublishMessage) WriteTo(w io.Writer) (int64, error) {
+	var size uint16 = uint16(len(self.TopicName))
+	total := 2 + int(size)
+	if self.QosLevel > 0 {
+		total += 2
+	}
+	total += len(self.Payload)
+
+	header_len, _ := self.FixedHeader.writeTo(uint8(total), w)
+	total += int(size)
+
+	binary.Write(w, binary.BigEndian, size)
+	w.Write([]byte(self.TopicName))
+	if self.QosLevel > 0 {
+		binary.Write(w, binary.BigEndian, self.PacketIdentifier)
+	}
+	w.Write(self.Payload)
+
+	return int64(int(total) + int(header_len)), nil
+}
+
 func (self *PublishMessage) encode() ([]byte, int, error) {
 	buffer := bytes.NewBuffer(nil)
 	var size uint16 = uint16(len(self.TopicName))
@@ -68,42 +90,7 @@ func (self *PublishMessage) encode() ([]byte, int, error) {
 	return buffer.Bytes(), total, nil
 }
 
-func (self *PublishMessage) GetPacketIdentifierBytes() (identifier []byte) {
-	if self.QosLevel > 0 {
-		ww := bytes.NewBuffer(nil)
-		binary.Write(ww, binary.BigEndian, self.PacketIdentifier)
-		identifier = ww.Bytes()
-	}
-
-	return
-}
-
-func (self *PublishMessage) Encode2() (topic []byte, identifier []byte, payload []byte, total int) {
-	// fixed header
-	//(2+n)topic
-	//[(2)packet_identifier]
-	//(n)payload
-	//(int) size
-
-	var size uint16 = uint16(len(self.TopicName))
-	total = 2 + int(size)
-	if self.QosLevel > 0 {
-		total += 2
-	}
-	total += len(self.Payload)
-
-	buffer := bytes.NewBuffer(nil)
-	binary.Write(buffer, binary.BigEndian, size)
-	buffer.Write([]byte(self.TopicName))
-	topic = buffer.Bytes()
-
-	if self.QosLevel > 0 {
-		ww := bytes.NewBuffer(nil)
-		binary.Write(ww, binary.BigEndian, self.PacketIdentifier)
-		identifier = ww.Bytes()
-	}
-
-	payload = self.Payload
-	return
-
+func (self *PublishMessage) String() string {
+	b, _ := json.Marshal(self)
+	return string(b)
 }

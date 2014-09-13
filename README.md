@@ -32,9 +32,9 @@ dev
 # Quick Start
 
 ```
-#momongad
-go get -u github.com/chobie/momonga/momongad
-momongad
+#momonga (MQTT Server)
+go get -u github.com/chobie/momonga/momonga
+momonga -config=config.toml
 
 #momonga_cli
 go get -u github.com/chobie/momonga/momonga_cli
@@ -46,10 +46,10 @@ momonga_cli
 ```
 mkdir momonga && cd momonga
 export GOPATH=`pwd`
-go get -u github.com/chobie/momonga/momongad
+go get -u github.com/chobie/momonga/momonga
 
 # server
-go run src/github.com/chobie/momonga/momongad/momongad.go -config=src/github.com/chobie/momonga/config.toml
+go run src/github.com/chobie/momonga/momonga/momonga.go -config=src/github.com/chobie/momonga/config.toml
 
 # cli
 go build -o momonga_cli src/github.com/chobie/momonga/momonga_cli/momonga_cli.go

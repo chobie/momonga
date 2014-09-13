@@ -77,12 +77,6 @@ func (s *EngineSuite) SetUpSuite(c *C) {
 func (s *EngineSuite) TearDownSuite(c *C) {
 }
 
-func (s *EngineSuite) TestServerShouldCreateWithDefaultConfiguration(c *C) {
-	conf, _ := configuration.LoadConfiguration("")
-	_, err := NewMomongaServer(conf)
-	c.Assert(err, Equals, nil)
-}
-
 func (s *EngineSuite) TestBasic(c *C) {
 	log.SetupLogging("error", "stdout")
 

@@ -11,6 +11,8 @@ import (
 	"io"
 	"sync"
 	"time"
+	"net"
+	log "github.com/chobie/momonga/logger"
 )
 
 type ConnectionState int
@@ -208,10 +210,14 @@ func NewConnection() *Connection {
 						for offset < remaining {
 							write, err := c.Connection.Write(b2[offset:])
 							if err != nil {
-								panic(fmt.Sprintf("Error: %s", err))
+								if nerr, ok := err.(net.Error); ok {
+									if !nerr.Temporary() {
+										log.Debug("NOT TEMPORARY ERROR: %s", err)
+										continue
+									}
+								}
 								if v, ok := c.Events["error"].(func(error)); ok {
 									v(err)
-									break
 								}
 							}
 							offset += write
@@ -220,8 +226,13 @@ func NewConnection() *Connection {
 						c.Balancer.Execute(func() {
 							for offset < remaining {
 								write, err := c.Connection.Write(b2)
+								if nerr, ok := err.(net.Error); ok {
+									if !nerr.Temporary() {
+										log.Debug("NOT TEMPORARY ERROR: %s", err)
+										continue
+									}
+								}
 								if err != nil {
-									panic(fmt.Sprintf("Error: %s", err))
 									if v, ok := c.Events["error"].(func(error)); ok {
 										v(err)
 									}

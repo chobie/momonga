@@ -8,6 +8,8 @@ import (
 	"testing"
 	. "gopkg.in/check.v1"
 	"bytes"
+	"fmt"
+//	"encoding/hex"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -16,7 +18,20 @@ type MySuite struct{}
 
 var _ = Suite(&MySuite{})
 
-func (s *MySuite) TESTPublishMessage(c *C) {
+func (s *MySuite) TestDecodePublishMessage(c *C) {
+	m := NewPublishMessage()
+	m.TopicName = "/debug"
+	m.Payload = []byte("Hello World")
+	b, _ := Encode(m)
+
+	x, _ := ParseMessage(bytes.NewReader(b), 0)
+	xx := x.(*PublishMessage)
+	fmt.Printf("%s\n", xx)
+
+}
+
+
+func (s *MySuite) TestPublishMessage(c *C) {
 	m := NewPublishMessage()
 	m.TopicName = "/debug"
 	m.Payload = []byte("Hello World")
@@ -25,63 +40,138 @@ func (s *MySuite) TESTPublishMessage(c *C) {
 	c.Assert(err, Equals, nil)
 }
 
-func (s *MySuite) TestEncoder2(c *C) {
+func (s *MySuite) TestPublishMessage2(c *C) {
 	m := NewPublishMessage()
 	m.TopicName = "/debug"
 	m.Payload = []byte("Hello World")
-	m.QosLevel = 1
+	b, _ := Encode(m)
 
-	t, i, p, _ := m.Encode2()
-	t = append(t, i...)
-	t = append(t, p...)
-
-	b, _, _ := m.encode()
-	c.Assert(bytes.Compare(t, b), Equals, 0)
-
-	m.QosLevel = 0
-	t, i, p, _ = m.Encode2()
-	t = append(t, i...)
-	t = append(t, p...)
-
-	b, _, _ = m.encode()
-	c.Assert(bytes.Compare(t, b), Equals, 0)
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
 }
 
-func (s *MySuite) BenchmarkEncoder2(c *C) {
+func (s *MySuite) BenchmarkWriteToPublishMessage(c *C) {
 	m := NewPublishMessage()
 	m.TopicName = "/debug"
 	m.Payload = []byte("Hello World")
-	m.QosLevel = 1
 
+	b := make([]byte, 256)
+	buffer := bytes.NewBuffer(b)
 	for i := 0; i < c.N; i++ {
-		t, i, p, _ := m.Encode2()
-
-		t = append(t, i...)
-		t = append(t, p...)
+		buffer.Reset()
+		m.WriteTo(buffer)
 	}
 }
 
-func (s *MySuite) TestEncoder22(c *C) {
-	m := NewPublishMessage()
-	m.TopicName = "/debug"
-	m.Payload = []byte("Hello World")
-	m.QosLevel = 2
+func (s *MySuite) TestPubrecMessage(c *C) {
+	m := NewPubrecMessage()
+	b, _ := Encode(m)
 
-	r, _ := Encode2(m)
-
-	a, _ := Encode(m)
-
-	x := []byte{}
-
-	x = append(x, r[0]...)
-	x = append(x, r[1]...)
-	x = append(x, r[2]...)
-	x = append(x, r[3]...)
-
-	c.Assert(bytes.Compare(x, a), Equals, 0)
-
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
 }
 
+func (s *MySuite) BenchmarkPubrecMessage(c *C) {
+	m := NewPubrecMessage()
+
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+
+	for i := 0; i < c.N; i++ {
+		buffer.Reset()
+		m.WriteTo(buffer)
+	}
+}
+
+func (s *MySuite) TestPubrelMessage(c *C) {
+	m := NewPubrelMessage()
+	b, _ := Encode(m)
+
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+}
+
+func (s *MySuite) TestSubackMessage(c *C) {
+	m := NewSubackMessage()
+	b, _ := Encode(m)
+
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+}
+
+func (s *MySuite) TestUnsubackMessage(c *C) {
+	m := NewUnsubackMessage()
+	b, _ := Encode(m)
+
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+}
+
+func (s *MySuite) TestSubscribeMessage(c *C) {
+	m := NewSubscribeMessage()
+	m.Payload = append(m.Payload, SubscribePayload{TopicPath: "/debug", RequestedQos: 2})
+	a, _ := Encode(m)
+
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+
+	c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
+}
+
+func (s *MySuite) TestConnackMessage(c *C) {
+	m := NewConnackMessage()
+	b, _ := Encode(m)
+
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+}
+
+func (s *MySuite) TestUnsubscribeMessage(c *C) {
+	m := NewUnsubscribeMessage()
+	m.Payload = append(m.Payload, SubscribePayload{TopicPath: "/debug", RequestedQos: 2})
+	a, _ := Encode(m)
+
+	buffer := bytes.NewBuffer(nil)
+	m.WriteTo(buffer)
+
+	c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
+}
+
+func (s *MySuite) TestConnectMessage(c *C) {
+	msg := NewConnectMessage()
+	msg.Magic = []byte("MQTT")
+	msg.Version = uint8(4)
+	msg.Identifier = "debug"
+	msg.CleanSession = true
+	msg.KeepAlive = uint16(10)
+
+	a, _ := Encode(msg)
+
+	buffer := bytes.NewBuffer(nil)
+	msg.WriteTo(buffer)
+	c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
+}
+
+func (s *MySuite) BenchmarkConnectMessage(c *C) {
+	msg := NewConnectMessage()
+	msg.Magic = []byte("MQTT")
+	msg.Version = uint8(4)
+	msg.Identifier = "debug"
+	msg.CleanSession = true
+	msg.KeepAlive = uint16(10)
+
+	buffer := bytes.NewBuffer(nil)
+	for i := 0; i < c.N; i++ {
+		buffer.Reset()
+		msg.WriteTo(buffer)
+	}
+}
 
 func (s *MySuite) BenchmarkEncode(c *C) {
 	m := NewPublishMessage()
@@ -93,14 +183,13 @@ func (s *MySuite) BenchmarkEncode(c *C) {
 	}
 }
 
-func (s *MySuite) BenchmarkParse(c *C) {
+func (s *MySuite) BenchmarkParsePublishMessage(c *C) {
 	m := NewPublishMessage()
 	m.TopicName = "/debug"
 	m.Payload = []byte("Hello World")
-	b, _ := Encode(m)
 
 	for i := 0; i < c.N; i++ {
-		ParseMessage(bytes.NewReader(b), 0)
+		ParseMessage(bytes.NewReader(nil), 0)
 	}
 }
 
@@ -112,5 +201,45 @@ func (s *MySuite) BenchmarkParseSubscribe(c *C) {
 
 	for i := 0; i < c.N; i++ {
 		ParseMessage(bytes.NewReader(b), 0)
+	}
+}
+
+func (s *MySuite) TestParseConnectMessage(c *C) {
+	msg := NewConnectMessage()
+	msg.Magic = []byte("MQTT")
+	msg.Version = uint8(4)
+	msg.UserName = "hoge"
+	msg.Password = "huga"
+	msg.Identifier = "debug"
+	msg.CleanSession = true
+	msg.KeepAlive = uint16(10)
+	msg.Will = &WillMessage{
+		Topic: "debug",
+		Message: "he",
+	}
+	a, _ := Encode(msg)
+
+	ParseMessage(bytes.NewReader(a), 0)
+
+	//c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
+}
+
+func (s *MySuite) BenchmarkParseConnectMessage(c *C) {
+	msg := NewConnectMessage()
+	msg.Magic = []byte("MQTT")
+	msg.Version = uint8(4)
+	msg.UserName = "hoge"
+	msg.Password = "huga"
+	msg.Identifier = "debug"
+	msg.CleanSession = true
+	msg.KeepAlive = uint16(10)
+	msg.Will = &WillMessage{
+		Topic: "debug",
+		Message: "he",
+	}
+	a, _ := Encode(msg)
+
+	for i := 0; i < c.N; i++ {
+		ParseMessage(bytes.NewReader(a), 0)
 	}
 }

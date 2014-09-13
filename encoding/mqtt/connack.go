@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"encoding/json"
 )
 
 type ConnackMessage struct {
@@ -30,3 +31,22 @@ func (self *ConnackMessage) decode(reader io.Reader) error {
 
 	return nil
 }
+
+func (self ConnackMessage) WriteTo(w io.Writer) (int64, error) {
+	var fsize = 2
+	size, err := self.FixedHeader.writeTo(uint8(fsize), w)
+	if err != nil {
+		return 0, err
+	}
+
+	binary.Write(w, binary.BigEndian, self.Reserved)
+	binary.Write(w, binary.BigEndian, self.ReturnCode)
+
+	return int64(fsize)+size, nil
+}
+
+func (self *ConnackMessage) String() string {
+	b, _ := json.Marshal(self)
+	return string(b)
+}
+

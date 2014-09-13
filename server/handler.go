@@ -17,7 +17,7 @@ import (
 // client library別にしないと無理なんだよなー。
 // 目指すところとしては、基本部分はデフォルトのHandlerで動くから
 // それで動かないところだけうわがいてね！って所。
-// Handler自体は受け渡ししかやらんのでlockしなくて大丈夫
+// Handler自体は受け渡ししかやらんのでlockしなくて大丈夫なはず
 type Handler struct{
 	Engine *Momonga
 	Connection Connection

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"encoding/json"
 )
 
 type UnsubscribeMessage struct {
@@ -55,4 +56,30 @@ func (self *UnsubscribeMessage) encode() ([]byte, int, error) {
 	}
 
 	return buffer.Bytes(), total, nil
+}
+
+func (self *UnsubscribeMessage) WriteTo(w io.Writer) (int64, error) {
+	var total = 2
+	for i := 0; i < len(self.Payload); i++ {
+		length := uint16(len(self.Payload[i].TopicPath))
+		total += 2 + int(length)
+	}
+
+	header_len, _ := self.FixedHeader.writeTo(uint8(total), w)
+	total += total + int(header_len)
+
+	binary.Write(w, binary.BigEndian, self.PacketIdentifier)
+	for i := 0; i < len(self.Payload); i++ {
+		var length uint16 = 0
+		length = uint16(len(self.Payload[i].TopicPath))
+		binary.Write(w, binary.BigEndian, length)
+		w.Write([]byte(self.Payload[i].TopicPath))
+	}
+
+	return int64(total), nil
+}
+
+func (self *UnsubscribeMessage) String() string {
+	b, _ := json.Marshal(self)
+	return string(b)
 }

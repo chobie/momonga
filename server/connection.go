@@ -41,6 +41,7 @@ func (e *ConnectionResetError) Error() string {
 	return e.s
 }
 
+// TODO: あんまり実情にあってないのでみなおそう
 type Connection interface {
 	//WriteMessage(request mqtt.Message) error
 	WriteMessageQueue(request mqtt.Message)

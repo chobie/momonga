@@ -14,16 +14,18 @@ import (
 	"strconv"
 	"io/ioutil"
 	"runtime"
-	_ "net/http/pprof"
-	"net/http"
 )
 
-func main() {
-	runtime.SetBlockProfileRate(1)
-	go func() {
-		http.ListenAndServe("0.0.0.0:6060", nil)
-	}()
+func setupEngine(engine *server.Momonga, conf *configuration.Config) {
+	if !conf.Server.EnableSys {
+		engine.DisableSys()
+	}
 
+	//これハメだよなー
+	engine.SetupCallback()
+}
+
+func main() {
 	foreGround := flag.Bool("foreground", true, "run as foreground")
 	configFile := flag.String("config", "config.toml", "the config file")
 	pidFile := flag.String("pidfile", "", "the pid file")
@@ -55,7 +57,19 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	svr, _ := server.NewMomongaServer(conf)
-	svr.ListenAndServe()
-	select{}
+
+	engine := server.NewMomonga()
+	setupEngine(engine, conf)
+
+	t := server.NewTcpServer(engine, conf)
+	//u := server.NewUnixServer(engine, conf)
+	h := server.NewHttpServer(engine, conf)
+
+	app := server.NewApplication(engine)
+	app.RegisterServer(t)
+	//app.RegisterServer(u)
+	app.RegisterServer(h)
+
+	app.Start()
+	app.Loop()
 }

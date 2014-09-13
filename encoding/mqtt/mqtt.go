@@ -517,51 +517,55 @@ func Encode(message Message) ([]byte, error){
 	return buffer.Bytes(), nil
 }
 
-func Encode2(message Message) ([][]byte, int, error){
-	buffer := bytes.NewBuffer(nil)
+func WriteMessageTo(message Message, w io.Writer) (int64, error){
+	var written int64
 
 	switch message.GetType() {
+	case PACKET_TYPE_CONNECT:
+		m := message.(*ConnectMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_CONNACK:
+		m := message.(*ConnackMessage)
+		written, _ = m.WriteTo(w)
 	case PACKET_TYPE_PUBLISH:
-		publish := message.(*PublishMessage)
-		var flag uint8 = uint8(publish.Type << 0x04)
-
-		// TODO: Dup flag
-		if publish.Retain > 0{
-			flag |= 0x01
-		}
-
-		if publish.QosLevel > 0 {
-			if publish.QosLevel == 1 {
-				flag |= 0x02
-			} else if publish.QosLevel == 2 {
-				flag |= 0x04
-			}
-		}
-
-		err := binary.Write(buffer, binary.BigEndian, flag)
-		if err != nil {
-			return nil, 0, fmt.Errorf("Error: %s\n", err)
-		}
-
-		// message encode
-		topic, identifier, payload, size := publish.Encode2()
-
-		err = binary.Write(buffer, binary.BigEndian, uint8(size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		header := buffer.Bytes()
-
-		return [][]byte{
-			header,
-			topic,
-			identifier,
-			payload,
-		}, size, nil
-
+		m := message.(*PublishMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_SUBSCRIBE:
+		m := message.(*SubscribeMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_SUBACK:
+		m := message.(*SubackMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_UNSUBSCRIBE:
+		m := message.(*UnsubscribeMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_DISCONNECT:
+		m := message.(*DisconnectMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_UNSUBACK:
+		m := message.(*UnsubackMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_PUBACK:
+		m := message.(*PubackMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_PUBREC:
+		m := message.(*PubrecMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_PUBREL:
+		m := message.(*PubrelMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_PUBCOMP:
+		m := message.(*PubcompMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_PINGREQ:
+		m := message.(*PingreqMessage)
+		written, _ = m.WriteTo(w)
+	case PACKET_TYPE_PINGRESP:
+		m := message.(*PingrespMessage)
+		written, _ = m.WriteTo(w)
 	default:
-		fmt.Printf("Not supported message: %s", message.GetTypeAsString())
+		fmt.Printf("Not supported message")
 	}
 
-	return nil, 0, fmt.Errorf("failed:")
+	return written, nil
 }

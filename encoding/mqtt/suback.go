@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"encoding/json"
 )
 
 type SubackMessage struct {
@@ -29,6 +30,22 @@ func (self *SubackMessage) encode() ([]byte, int, error) {
 	return buffer.Bytes(), total, nil
 }
 
+func (self *SubackMessage) WriteTo(w io.Writer) (int64, error) {
+	var fsize = 2 + len(self.Qos)
+
+	size, err := self.FixedHeader.writeTo(uint8(fsize), w)
+	if err != nil {
+		return 0, err
+	}
+
+	binary.Write(w, binary.BigEndian, self.PacketIdentifier)
+	io.Copy(w, bytes.NewReader(self.Qos))
+
+	return int64(size) + int64(fsize), nil
+}
+
+
+
 func (self *SubackMessage) decode(reader io.Reader) error {
 	var remaining uint8
 	remaining = uint8(self.FixedHeader.RemainingLength)
@@ -45,4 +62,9 @@ func (self *SubackMessage) decode(reader io.Reader) error {
 
 	self.Qos = buffer.Bytes()
 	return nil
+}
+
+func (self *SubackMessage) String() string {
+	b, _ := json.Marshal(self)
+	return string(b)
 }

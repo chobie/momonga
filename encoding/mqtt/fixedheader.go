@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"io"
 	"fmt"
-	"bytes"
+	"encoding/json"
 )
 
 type FixedHeader struct {
@@ -62,10 +62,9 @@ func (self *FixedHeader) GetTypeAsString() string {
 	}
 }
 
-func (self *FixedHeader) EncodeHeader(size uint8) ([]byte) {
+func (self *FixedHeader) writeTo(length uint8, w io.Writer) (int64, error) {
 	var flag uint8 = uint8(self.Type << 0x04)
 
-	// TODO: Dup flag
 	if self.Retain > 0{
 		flag |= 0x01
 	}
@@ -78,18 +77,22 @@ func (self *FixedHeader) EncodeHeader(size uint8) ([]byte) {
 		}
 	}
 
-	buffer := bytes.NewBuffer(nil)
-	err := binary.Write(buffer, binary.BigEndian, flag)
+	if self.Dupe {
+		flag |= 0x08
+	}
+
+	err := binary.Write(w, binary.BigEndian, flag)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 	}
 
-	err = binary.Write(buffer, binary.BigEndian, uint8(size))
+	// TODO: これ可変長なのよね
+	err = binary.Write(w, binary.BigEndian, uint8(length))
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 	}
 
-	return buffer.Bytes()
+	return int64(2), nil
 }
 
 func (self *FixedHeader) decode(reader io.Reader) error {
@@ -120,3 +123,7 @@ func (self *FixedHeader) decode(reader io.Reader) error {
 	return nil
 }
 
+func (self *FixedHeader) String() string {
+	b, _ := json.Marshal(self)
+	return string(b)
+}

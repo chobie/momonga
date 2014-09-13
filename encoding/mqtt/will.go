@@ -7,13 +7,15 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
+	"encoding/json"
 )
 
 type WillMessage struct {
-	Qos uint8
-	Topic string
-	Message string
-	Retain bool
+	Qos uint8 `json:"qos"`
+	Topic string `json:"topic"`
+	Message string `json:"message"`
+	Retain bool `json:retain`
 }
 
 func (self *WillMessage) encode() ([]byte, int, error){
@@ -33,4 +35,39 @@ func (self *WillMessage) encode() ([]byte, int, error){
 	size += 2 + int(message_length)
 
 	return buffer.Bytes(), size, err
+}
+
+
+func (self *WillMessage) WriteTo(w io.Writer) (int64, error) {
+	var topic_length uint16
+	var size int = 0
+
+	topic_length = uint16(len(self.Topic))
+	err := binary.Write(w, binary.BigEndian, topic_length)
+	w.Write([]byte(self.Topic))
+	size += 2 + int(topic_length)
+
+	message_length := uint16(len(self.Message))
+	err = binary.Write(w, binary.BigEndian, message_length)
+	w.Write([]byte(self.Message))
+	size += 2 + int(message_length)
+
+	return int64(size), err
+}
+
+func (self *WillMessage) Size() (int){
+	var size int = 0
+
+	topic_length := uint16(len(self.Topic))
+	size += 2 + int(topic_length)
+
+	message_length := uint16(len(self.Message))
+	size += 2 + int(message_length)
+
+	return size
+}
+
+func (self *WillMessage) String() string {
+	b, _ := json.Marshal(self)
+	return string(b)
 }

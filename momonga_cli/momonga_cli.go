@@ -135,7 +135,7 @@ func main() {
 		cli.BoolFlag{"r", "message should be retained.", ""},
 		cli.BoolFlag{"d", "enable debug messages", ""},
 		cli.BoolFlag{"insecure", "do not check that the server certificate", ""},
-//		cli.BoolFlag{"websocket", "use websocket", ""},
+		cli.BoolFlag{"websocket", "use websocket", ""},
 		cli.StringFlag{"origin", "", "websocket origin", ""},
 		cli.StringFlag{"url", "", "websocket url (ws://localhost:8888/mqtt)", ""},
 	}

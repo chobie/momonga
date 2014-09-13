@@ -22,7 +22,7 @@ type Server struct {
 	Port int `toml:"port"`
 	Socket string `toml:"socket"`
 	EnableSys bool `toml:"enable_sys"`
-	WebSocketPort int `toml:"websocket_port"`
+	HttpPort int `toml:"http_port"`
 	WebSocketMount string `toml:"websocket_mount"`
 }
 
@@ -54,7 +54,7 @@ func LoadConfiguration(configFile string) (*Config, error) {
 			Port: 1883,
 			Socket: "",
 			EnableSys: true,
-			WebSocketPort: 9999,
+			HttpPort: 9000,
 			WebSocketMount: "/mqtt",
 		},
 	}

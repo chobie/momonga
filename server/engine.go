@@ -18,6 +18,8 @@ import (
 	"sync"
 	"encoding/hex"
 	"encoding/binary"
+	"encoding/json"
+	"io"
 )
 
 type DisconnectError struct {
@@ -32,9 +34,14 @@ type Retryable struct {
 }
 
 type SubscribeSet struct {
-	ClientId string
-	TopicFilter string
-	QoS int
+	ClientId string `json:"client_id"`
+	TopicFilter string `json:"topic_filter"`
+	QoS int `json:"qos"`
+}
+
+func (self *SubscribeSet) String() string {
+	b, _ := json.Marshal(self)
+	return string(b)
 }
 
 // QoS 1, 2 are available. but really suck implementation.
@@ -208,7 +215,7 @@ func (self *Momonga) Subscribe(p *codec.SubscribeMessage, conn Connection) {
 
 		if len(retaines) > 0 {
 			for i := range retaines {
-				log.Info("Retains: %s", retaines[i].TopicName)
+				log.Debug("Retains: %s", retaines[i].TopicName)
 				id := conn.GetOutGoingTable().NewId()
 
 				pp, _ := codec.CopyPublishMessage(retaines[i])
@@ -222,7 +229,7 @@ func (self *Momonga) Subscribe(p *codec.SubscribeMessage, conn Connection) {
 
 
 	// MEMO: we can reply directly, no need to route, persite message.
-	log.Info("Send Suback Message To: %s", conn.GetId())
+	log.Debug("Send Suback Message To: %s", conn.GetId())
 	conn.WriteMessageQueue(ack)
 	if len(retained) > 0 {
 		log.Debug("Send retained Message To: %s", conn.GetId())
@@ -246,11 +253,12 @@ func (self *Momonga) GetConnectionByClientId(clientId string) (*MmuxConnection, 
 	key := hash % 64
 
 	self.LockPool[key].RLock()
-	defer self.LockPool[key].RUnlock()
 	if cn, ok := self.Connections[clientId]; ok {
+		self.LockPool[key].RUnlock()
 		return cn, nil
 	}
 
+	self.LockPool[key].RUnlock()
 	return nil, fmt.Errorf("not found")
 }
 
@@ -283,8 +291,9 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 			// あれ、ackとかかえすんだっけ？
 			return
 		} else {
-			data, _ := codec.Encode(msg)
-			self.DataStore.Put([]byte(msg.TopicName), data)
+			buffer := bytes.NewBuffer(nil)
+			codec.WriteMessageTo(msg, buffer)
+			self.DataStore.Put([]byte(msg.TopicName), buffer.Bytes())
 		}
 	}
 
@@ -456,14 +465,15 @@ func (self *Momonga) Run() {
 
 func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *MmuxConnection {
 	log.Debug("handshaking: %s", p.Identifier)
+
 	if conn.Connected == true {
-		log.Debug("wrong sequence.")
+		log.Error("wrong sequence. (connect twice)")
 		conn.Close()
 		return nil
 	}
 
 	if !(string(p.Magic) == "MQTT" || string(p.Magic) == "MQIsdp") {
-		log.Debug("magic is not expected: %s  %+v\n", string(p.Magic), p)
+		log.Error("magic is not expected: %s  %+v\n", string(p.Magic), p)
 		conn.Close()
 		return nil
 	}
@@ -570,4 +580,52 @@ func (self *Momonga) Unsubscribe(messageId uint16, granted int, payloads []codec
 		}
 	}
 	conn.WriteMessageQueue(ack)
+}
+
+
+func (self *Momonga) HandleConnection(conn Connection) {
+	hndr := NewHandler(conn, self)
+
+	for {
+		_, err := conn.ReadMessage()
+		if conn.GetState() == STATE_CLOSED {
+			err = &DisconnectError{}
+		}
+
+		if err != nil {
+			log.Debug("DISCONNECT: %s", conn.GetId())
+			// ここでmyconnがかえる場合はhandshake前に死んでる
+			//self.Engine.CleanSubscription(conn)
+			var ok bool
+			var mux *MmuxConnection
+
+			if mux, ok = self.Connections[conn.GetId()]; ok {
+			}
+
+			if _, ok := err.(*DisconnectError); !ok {
+				if conn.HasWillMessage() {
+					self.SendWillMessage(conn)
+				}
+
+				if err == io.EOF {
+					// nothing to do
+				} else {
+					log.Error("Handle Connection Error: %s", err)
+				}
+			}
+
+			if mux != nil {
+				mux.Detach(conn)
+
+				if mux.ShouldClearSession() {
+					self.CleanSubscription(mux)
+					delete(self.Connections, mux.GetId())
+				}
+			}
+
+			conn.Close()
+			hndr.Close()
+			return
+		}
+	}
 }

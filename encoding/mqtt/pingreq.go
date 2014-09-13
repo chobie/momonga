@@ -4,6 +4,26 @@
 
 package mqtt
 
+import(
+	"io"
+	"encoding/json"
+)
+
 type PingreqMessage struct {
 	FixedHeader
+}
+
+func (self *PingreqMessage) WriteTo(w io.Writer) (int64, error) {
+	var fsize = 0
+	size, err := self.FixedHeader.writeTo(uint8(fsize), w)
+	if err != nil {
+		return 0, err
+	}
+
+	return int64(fsize) + size, nil
+}
+
+func (self *PingreqMessage) String() string {
+	b, _ := json.Marshal(self)
+	return string(b)
 }

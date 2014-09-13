@@ -4,6 +4,7 @@ import (
 	"testing"
 	. "gopkg.in/check.v1"
 	_ "fmt"
+	"os"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -24,7 +25,7 @@ func (s *QlobberSuite) TestQlobber(c *C) {
 	c.Assert(r[1], Equals, "a")
 	c.Assert(r[2], Equals, "b")
 
-	q.Dump()
+	q.Dump(os.Stdout)
 }
 
 func (s *QlobberSuite) BenchmarkQlobber(c *C) {

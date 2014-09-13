@@ -10,12 +10,13 @@ import (
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
 	"io"
+	"bufio"
 	"sync"
 	"time"
 	"net"
-	"encoding/hex"
 )
 
+const defaultBufferSize = 16 * 1024
 
 type MyConnection struct {
 	MyConnection       io.ReadWriteCloser
@@ -42,6 +43,8 @@ type MyConnection struct {
 	CleanSession bool
 	Connected bool
 	Closed chan bool
+	Reader *bufio.Reader
+	Writer *bufio.Writer
 }
 
 func (self *MyConnection) SetOpaque(opaque interface{}) {
@@ -262,6 +265,8 @@ func (self *MyConnection) SetMyConnection(c io.ReadWriteCloser) {
 
 	self.State = STATE_CONNECTED
 	self.MyConnection = c
+	self.Writer = bufio.NewWriterSize(self.MyConnection, defaultBufferSize)
+	self.Reader = bufio.NewReaderSize(self.MyConnection, defaultBufferSize)
 }
 
 func (self *MyConnection) Subscribe(topic string, QoS int) error {
@@ -652,11 +657,11 @@ func (self *MyConnection) ParseMessage() (codec.Message, error) {
 }
 
 func (self *MyConnection) Read(p []byte) (int, error) {
-	return self.MyConnection.Read(p)
+	return self.Reader.Read(p)
 }
 
 func (self *MyConnection) Write(b []byte) (int, error) {
-	return self.MyConnection.Write(b)
+	return self.Writer.Write(b)
 }
 
 func (self *MyConnection) Close() error {
@@ -769,39 +774,13 @@ func (self *MyConnection) IsAlived() bool {
 	return true
 }
 
-// Don't export
 func (self *MyConnection) writeMessage(msg codec.Message) error {
 	log.Debug("Write Message [%s]: %+v", msg.GetTypeAsString(), msg)
 
-	data, err := codec.Encode(msg)
-	if err != nil {
-		log.Debug("ERROR: %s", err)
-		return err
-	}
-
-	remaining := len(data)
-	offset := 0
-
-	log.Debug("[WRITE: %s] %+v\n%s\n", msg.GetTypeAsString(), msg, hex.Dump(data))
-
-	for offset < remaining {
-		size, err := self.Write(data[offset:])
-		if err != nil {
-			if nerr, ok := err.(net.Error); ok {
-				if !nerr.Temporary() {
-					log.Debug("NOT TEMPORARY ERROR: %s", err)
-					return nerr
-				}
-			}
-			if err.Error() == "use of closed network connection" {
-				return err
-			}
-
-			log.Error("WRITE ERROR: %s", err)
-		}
-		offset += size
-	}
-
+	self.Mutex.Lock()
+	codec.WriteMessageTo(msg, self.Writer)
+	self.Writer.Flush()
 	self.Last = time.Now()
+	self.Mutex.Unlock()
 	return nil
 }

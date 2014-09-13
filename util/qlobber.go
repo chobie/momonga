@@ -28,6 +28,7 @@ import (
 	"reflect"
 	"sync"
 	"fmt"
+	"io"
 )
 
 type QlobberTrie struct {
@@ -61,19 +62,16 @@ func NewQlobber() *Qlobber {
 
 func (self *Qlobber) Match(Topic string) []interface{} {
 	self.Mutex.RLock()
-	if v, ok := self.Cache[Topic]; ok && v != nil {
-		//self.Mutex.RUnlock()
-		//return v
-	}
+//	if v, ok := self.Cache[Topic]; ok && v != nil {
+//		self.Mutex.Unlock()
+//		return v
+//	}
 
 	var v []interface{}
 	result := self.match(v, 0, strings.Split(Topic, self.Separator), self.QlobberTrie);
+
+//	self.Cache[Topic] = result
 	self.Mutex.RUnlock()
-
-	self.Mutex.Lock()
-	self.Cache[Topic] = result
-	self.Mutex.Unlock()
-
 	return result
 }
 
@@ -111,10 +109,10 @@ func (self *Qlobber) match(v []interface{}, length int, words []string, sub_trie
 
 func (self *Qlobber) Add(Topic string, Value interface{}) {
 	self.Mutex.Lock()
-	defer self.Mutex.Unlock()
 	self.Cache[Topic] = nil
 
 	self.add(Value, 0, strings.Split(Topic, self.Separator), self.QlobberTrie)
+	self.Mutex.Unlock()
 }
 
 func (self *Qlobber) add(Value interface{}, length int, words []string, sub_trie *QlobberTrie) {
@@ -189,29 +187,31 @@ func (self *Qlobber) remove(val interface{}, i int, words []string, sub_trie *Ql
 
 func (self *Qlobber) Remove(Topic string, val interface{}) {
 	self.Mutex.Lock()
-	defer self.Mutex.Unlock()
-	//self.Cache[Topic] = nil
+	self.Cache[Topic] = nil
 
 	self.remove(val, 0, strings.Split(Topic, self.Separator), self.QlobberTrie);
+	self.Mutex.Unlock()
 }
 
-func (self *Qlobber) Dump() {
-	self.dump(self.QlobberTrie, 0)
+func (self *Qlobber) Dump(writer io.Writer) {
+	self.Mutex.RLock()
+	self.dump(self.QlobberTrie, 0, writer)
+	self.Mutex.RUnlock()
 }
 
 
-func (self *Qlobber) dump(sub_trie *QlobberTrie, level int) {
+func (self *Qlobber) dump(sub_trie *QlobberTrie, level int, writer io.Writer) {
 	ls := strings.Repeat(" ", level * 2)
 	for offset := range sub_trie.Collections {
 		w := sub_trie.Collections[offset]
-		fmt.Printf("%s`%s\n", ls, w)
+		fmt.Fprintf(writer, "%s`%s\n", ls, w)
 	}
 
 	for k, v := range sub_trie.Trie {
 		if k == "" {
 			k = "root"
 		}
-		fmt.Printf("%s[%s]\n", ls, k)
-		self.dump(v, level + 1)
+		fmt.Fprintf(writer, "%s[%s]\n", ls, k)
+		self.dump(v, level + 1, writer)
 	}
 }
