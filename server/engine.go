@@ -18,10 +18,10 @@ import (
 	"github.com/chobie/momonga/util"
 	"io"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
-	"runtime"
 )
 
 type DisconnectError struct {

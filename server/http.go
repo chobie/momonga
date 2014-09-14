@@ -2,6 +2,7 @@ package server
 
 import (
 	"code.google.com/p/go.net/websocket"
+	"expvar"
 	"fmt"
 	"github.com/chobie/momonga/util"
 	"io"
@@ -42,7 +43,7 @@ func (self *MyHttpServer) debugRouter(w http.ResponseWriter, req *http.Request) 
 		fmt.Fprintf(w, "{\n")
 		first := true
 		expvar.Do(func(kv expvar.KeyValue) {
-			if kv.Key == "cmdline" || kv.Key == "memstats"{
+			if kv.Key == "cmdline" || kv.Key == "memstats" {
 				return
 			}
 			if !first {
