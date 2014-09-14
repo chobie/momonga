@@ -37,6 +37,21 @@ func (self *MyHttpServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func (self *MyHttpServer) debugRouter(w http.ResponseWriter, req *http.Request) error {
 	switch req.URL.Path {
+	case "/debug/vars":
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		fmt.Fprintf(w, "{\n")
+		first := true
+		expvar.Do(func(kv expvar.KeyValue) {
+			if kv.Key == "cmdline" || kv.Key == "memstats"{
+				return
+			}
+			if !first {
+				fmt.Fprintf(w, ",\n")
+			}
+			first = false
+			fmt.Fprintf(w, "%q: %s", kv.Key, kv.Value)
+		})
+		fmt.Fprintf(w, "\n}\n")
 	case "/debug/pprof":
 		httpprof.Index(w, req)
 	case "/debug/pprof/cmdline":
@@ -126,6 +141,9 @@ func (self *MyHttpServer) apiRouter(w http.ResponseWriter, req *http.Request) er
 		return nil
 	case self.WebSocketMount:
 		websocket.Handler(func(ws *websocket.Conn) {
+			// need for bynary frame
+			ws.PayloadType = 0x02
+
 			conn := NewMyConnection()
 			conn.SetMyConnection(ws)
 			conn.SetId(ws.RemoteAddr().String())

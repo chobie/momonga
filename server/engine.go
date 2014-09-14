@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"runtime"
 )
 
 type DisconnectError struct {
@@ -606,6 +607,15 @@ func (self *Momonga) Unsubscribe(messageId uint16, granted int, payloads []codec
 }
 
 func (self *Momonga) HandleConnection(conn Connection) {
+	defer func() {
+		if err := recover(); err != nil {
+			const size = 64 << 10
+			buf := make([]byte, size)
+			buf = buf[:runtime.Stack(buf, false)]
+			log.Error("momonga: panic serving %s: %v\n%s", conn.GetId(), err, buf)
+		}
+	}()
+
 	hndr := NewHandler(conn, self)
 
 	for {
