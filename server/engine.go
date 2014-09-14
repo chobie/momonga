@@ -24,6 +24,14 @@ import (
 	"time"
 )
 
+var (
+	V311_MAGIC   = []byte("MQTT")
+	V311_VERSION = uint8(4)
+	V3_MAGIC     = []byte("MQIsdp")
+	V3_VERSION   = uint8(3)
+)
+
+
 type DisconnectError struct {
 }
 
@@ -68,9 +76,7 @@ func NewMomonga(config *configuration.Config) *Momonga {
 		engine.LockPool[uint32(i)] = &sync.RWMutex{}
 	}
 
-	if !config.Engine.EnableSys {
-		engine.DisableSys()
-	}
+	engine.setupCallback()
 
 	return engine
 }
@@ -103,7 +109,7 @@ func (self *Momonga) DisableSys() {
 func (self *Momonga) Terminate() {
 }
 
-func (self *Momonga) SetupCallback() {
+func (self *Momonga) setupCallback() {
 	self.OutGoingTable.SetOnFinish(func(id uint16, message codec.Message, opaque interface{}) {
 		switch message.GetType() {
 		case codec.PACKET_TYPE_PUBLISH:
@@ -202,7 +208,7 @@ func (self *Momonga) Subscribe(p *codec.SubscribeMessage, conn Connection) {
 
 	var retained []*codec.PublishMessage
 	// どのレベルでlockするか
-	qosBuffer := bytes.NewBuffer(nil)
+	qosBuffer := bytes.NewBuffer(make([]byte, len(p.Payload)))
 	for _, payload := range p.Payload {
 		// don't subscribe multiple time
 		if cn.IsSubscribed(payload.TopicPath) {
@@ -464,18 +470,10 @@ func (self *Momonga) Work() {
 func (self *Momonga) Run() {
 	go self.RunMaintenanceThread()
 
-	// TODO: use config
 	for i := 0; i < self.config.GetFanoutWorkerCount(); i++ {
 		go self.Work()
 	}
 }
-
-var (
-	V311_MAGIC   = []byte("MQTT")
-	V311_VERSION = uint8(4)
-	V3_MAGIC     = []byte("MQIsdp")
-	V3_VERSION   = uint8(3)
-)
 
 func (self *Momonga) checkVersion(p *codec.ConnectMessage) error {
 	if bytes.Compare(V311_MAGIC, p.Magic) == 0 {
@@ -593,7 +591,7 @@ func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *Mmu
 }
 
 func (self *Momonga) Unsubscribe(messageId uint16, granted int, payloads []codec.SubscribePayload, conn Connection) {
-	log.Info("UNSUBSCRIBE:")
+	log.Debug("Unsubscribe :")
 	ack := codec.NewUnsubackMessage()
 	ack.PacketIdentifier = messageId
 

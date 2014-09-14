@@ -1,22 +1,18 @@
-// Copyright 2014, Shuhei Tanuma. All rights reserved.
-// Use of this source code is governed by a MIT license
-// that can be found in the LICENSE file.
-
 package client
 
 import (
-	"errors"
 	"fmt"
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/chobie/momonga/util"
 	"io"
-	"net"
 	"sync"
 	"time"
+	"net"
+	log "github.com/chobie/momonga/logger"
 )
 
 type Option struct {
-	TransporterCallback func() (io.ReadWriteCloser, error)
+	TransporterCallback func() (net.Conn, error)
 	Magic               []byte
 	Version             int
 	Identifier          string
@@ -32,13 +28,18 @@ type Option struct {
 }
 
 type Client struct {
-	Connection      *Connection
+	Connection      *MyConnection
 	PublishCallback func(string, []byte)
 	Option          Option
 	CleanSession    bool
+	Subscribed      map[string]int
 	Mutex           sync.RWMutex
 	Errors          chan error
 	Kicker          *time.Timer
+	term	chan bool
+	wg  sync.WaitGroup
+	offline []codec.Message
+	mu sync.RWMutex
 }
 
 func NewClient(opt Option) *Client {
@@ -50,10 +51,13 @@ func NewClient(opt Option) *Client {
 			Identifier: "momongacli",
 			Keepalive:  10,
 		},
-		Connection:   NewConnection(),
+		Connection:   NewMyConnection(),
 		CleanSession: true,
+		Subscribed: make(map[string]int),
 		Mutex:        sync.RWMutex{},
 		Errors:       make(chan error, 128),
+		term: make(chan bool, 1),
+		offline: make([]codec.Message, 8192),
 	}
 
 	if len(opt.Magic) < 1 {
@@ -71,37 +75,49 @@ func NewClient(opt Option) *Client {
 	// TODO: should provide defaultOption function.
 	client.Option = opt
 	client.Connection.Keepalive = opt.Keepalive
+
+	client.On("connack", func(result uint8) {
+		if result == 0 {
+			client.wg.Done()
+
+			// reconnect
+			for topic, qos := range client.Subscribed {
+				client.Subscribe(topic, qos)
+			}
+		}
+	})
+	client.On("error", func(err error) {
+			if err == io.EOF {
+				client.Terminate()
+				log.Debug("UNEXPECTED TERMINATE. retry")
+				client.Connect()
+			}
+	})
 	return client
 }
 
-func (self *Client) EnableCleanSession() {
-	self.CleanSession = true
-}
-
-func (self *Client) DisableCleanSession() {
-	self.CleanSession = false
-}
-
-func (self *Client) SetCleanSession(bval bool) {
-	self.CleanSession = bval
-}
-
-func (self *Client) getConnectionState() ConnectionState {
-	if self.Connection == nil {
-		return CONNECTION_STATE_CLOSED
-	}
-	return self.Connection.GetConnectionState()
-}
-
 func (self *Client) Connect() error {
-	if self.getConnectionState() > CONNECTION_STATE_CLOSED {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+
+	if self.Connection.State == STATE_CONNECTING || self.Connection.State == STATE_CONNECTED {
+		// 接続中, 試行中なのでなにもしない
 		return nil
 	}
+
 	connection, err := self.Option.TransporterCallback()
 	if err != nil {
+		log.Error("Error; %s", err)
+		time.AfterFunc(time.Second, func() {
+				self.Connect()
+		})
 		return err
 	}
-	self.Connection.SetConnection(connection)
+
+	go self.Loop()
+	self.Connection.SetMyConnection(connection)
+
+	self.Connection.KeepLoop = true
 
 	// send a connect message to MQTT Server
 	msg := codec.NewConnectMessage()
@@ -128,82 +144,100 @@ func (self *Client) Connect() error {
 		msg.Password = self.Option.Password
 	}
 
+	self.Connection.State = STATE_CONNECTING
+	self.wg.Add(1)
 	self.Connection.WriteMessageQueue(msg)
+	log.Debug("CONNECT PROCESS")
 	return nil
 }
 
-func (self *Client) Subscribe(topic string, QoS int) error {
-	if self.Connection == nil {
-		return errors.New("error")
+func (self *Client) WaitConnection() {
+	if self.Connection.State == STATE_CONNECTING {
+		self.wg.Wait()
 	}
-	return self.Connection.Subscribe(topic, QoS)
+}
+
+func (self *Client) Terminate() {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+
+	if self.Connection.State != STATE_CLOSED {
+		self.term <- true
+		self.Connection.Close()
+	}
+}
+
+func (self *Client) Loop() {
+	// TODO: consider interface. for now, just print it.
+	for {
+		select {
+		case e := <-self.Errors:
+			log.Error("ERROR: %s\n", e)
+		case <- self.term:
+			// Close
+			return
+		default:
+		// TODO: move this function to connect (実際にReadするやつ)
+			switch self.Connection.State {
+			case STATE_CONNECTED, STATE_CONNECTING:
+				_, err := self.Connection.ParseMessage()
+				if err != nil {
+					if nerr, ok := err.(net.Error); ok {
+						if nerr.Timeout() {
+							// Closing connection.
+							self.Terminate()
+						} else if nerr.Temporary() {
+							//log.Info("Temporary Error: %s", err)
+							self.Terminate()
+						} else {
+							fmt.Printf("damepo")
+						}
+					} else if err == io.EOF {
+						self.Terminate()
+					} else if err.Error() == "use of closed network connection" {
+						self.Terminate()
+					} else {
+						self.Errors <- err
+					}
+				}
+			case STATE_CLOSED:
+				// TODO: implement exponential backoff
+				log.Debug("Sleep")
+				time.Sleep(time.Second * 3)
+
+				err := self.Connect()
+				if err != nil {
+					self.Errors <- err
+				}
+			default:
+				log.Debug("SLEEP(unknown)")
+				time.Sleep(time.Second)
+			}
+		}
+	}
 }
 
 func (self *Client) On(event string, callback interface{}, args ...bool) error {
 	return self.Connection.On(event, callback, args...)
 }
 
-// TODO: What is the good API?
-func (self *Client) Loop() {
-
-	// TODO: move this function to connect (実際にReadするやつ)
-	for {
-		switch self.getConnectionState() {
-		case CONNECTION_STATE_CONNECTED:
-			_, err := self.Connection.ParseMessage()
-			if err != nil {
-				if nerr, ok := err.(net.Error); ok {
-					if nerr.Timeout() {
-						// Closing connection.
-						self.ForceClose()
-					} else if nerr.Temporary() {
-						//log.Info("Temporary Error: %s", err)
-						self.ForceClose()
-					} else {
-						fmt.Printf("damepo")
-					}
-				} else if err == io.EOF {
-					self.ForceClose()
-				} else if err.Error() == "use of closed network connection" {
-					self.ForceClose()
-				} else {
-					self.Errors <- err
-				}
-			}
-		case CONNECTION_STATE_CLOSED:
-			// TODO: implement exponential backoff
-			time.Sleep(time.Second * 3)
-
-			err := self.Connect()
-			if err != nil {
-				self.Errors <- err
-			}
-		}
-	}
-
-	// TODO: consider interface. for now, just print it.
-	go func() {
-		for {
-			select {
-			case e := <-self.Errors:
-				fmt.Printf("error: %s\n", e)
-			}
-		}
-	}()
-}
-
 func (self *Client) Publish(TopicName string, Payload []byte, QoSLevel int) {
 	self.publishCommon(TopicName, Payload, QoSLevel, false, nil)
 }
 
+func (self *Client) publishCommon(TopicName string, Payload []byte, QosLevel int, retain bool, opaque interface{}) {
+	self.Connection.Publish(TopicName, Payload, QosLevel, retain, opaque)
+}
+
 func (self *Client) PublishWait(TopicName string, Payload []byte, QoSLevel int) error {
 	if QoSLevel == 0 {
-		return errors.New("QoS should be greater than 0.")
+		return fmt.Errorf("QoS should be greater than 0.")
 	}
 
 	b := make(chan bool, 1)
 	self.publishCommon(TopicName, Payload, QoSLevel, false, b)
 	<-b
+	close(b)
 
 	return nil
 }
@@ -212,32 +246,16 @@ func (self *Client) PublishWithRetain(TopicName string, Payload []byte, QoSLevel
 	self.publishCommon(TopicName, Payload, QoSLevel, true, nil)
 }
 
-func (self *Client) publishCommon(TopicName string, Payload []byte, QosLevel int, retain bool, opaque interface{}) {
-	self.Connection.Publish(TopicName, Payload, QosLevel, retain, opaque)
-}
+func (self *Client) Subscribe(topic string, QoS int) error {
+	self.Subscribed[topic] = QoS
 
-func (self *Client) SetPublishCallback(callback func(string, []byte)) {
-	self.PublishCallback = callback
+	return self.Connection.Subscribe(topic, QoS)
 }
 
 func (self *Client) Unsubscribe(topic string) {
 	self.Connection.Unsubscribe(topic)
 }
 
-func (self *Client) SetRequestPerSecondLimit(limit int) {
-	self.Connection.Balancer.PerSec = limit
-}
-
 func (self *Client) Disconnect() {
 	self.Connection.Disconnect()
-}
-
-func (self *Client) Close() {
-	self.Disconnect()
-	self.ForceClose()
-}
-
-func (self *Client) ForceClose() {
-	// quit without disconnect message
-	self.Connection.Close()
 }

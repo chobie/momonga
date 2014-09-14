@@ -30,6 +30,25 @@ func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
 	var headerLength uint16 = uint16(len(self.Magic))
 	var size int = 0
 
+	if self.CleanSession {
+		self.Flag |= 0x02
+	}
+	if self.Will != nil {
+		self.Flag |= 0x04
+		switch self.Will.Qos {
+		case 1:
+			self.Flag |= 0x08
+		case 2:
+			self.Flag |= 0x18
+		}
+	}
+	if len(self.UserName) > 0 {
+		self.Flag |= 0x80
+	}
+	if len(self.Password) > 0 {
+		self.Flag |= 0x40
+	}
+
 	size += 2 + len(self.Magic)
 	size += 1 + 1 + 2
 	if self.Identifier != "" {
@@ -52,19 +71,6 @@ func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
 	}
 
 	w.Write(self.Magic)
-	if self.CleanSession {
-		self.Flag |= 0x02
-	}
-	if self.Will != nil {
-		self.Flag |= 0x04
-	}
-	if len(self.UserName) > 0 {
-		self.Flag |= 0x80
-	}
-	if len(self.Password) > 0 {
-		self.Flag |= 0x40
-	}
-
 	binary.Write(w, binary.BigEndian, self.Version)
 	binary.Write(w, binary.BigEndian, self.Flag)
 	binary.Write(w, binary.BigEndian, self.KeepAlive)
@@ -214,8 +220,13 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 		if int(self.Flag)&0x32 > 0 {
 			will.Retain = true
 		}
-		if int(self.Flag)&0x32 > 0 {
-			will.Qos = uint8((int(self.Flag) >> 3 & 0x23))
+
+		q := (int(self.Flag) >> 3)
+
+		if q & 0x02 > 0{
+			will.Qos = 2
+		} else if q & 0x01 > 0{
+			will.Qos = 1
 		}
 		self.Will = will
 	}

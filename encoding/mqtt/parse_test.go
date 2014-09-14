@@ -157,6 +157,25 @@ func (s *MySuite) TestConnectMessage(c *C) {
 	c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
 }
 
+func (s *MySuite) TestConnectWillMessage(c *C) {
+	msg := NewConnectMessage()
+	msg.Magic = []byte("MQTT")
+	msg.Version = uint8(4)
+	msg.Identifier = "debug"
+	msg.CleanSession = true
+	msg.KeepAlive = uint16(10)
+	msg.Will = &WillMessage{
+		Topic: "/debug",
+		Message: "Dead",
+		Retain: false,
+		Qos: 1,
+	}
+
+	a, _ := Encode(msg)
+	m, _ := ParseMessage(bytes.NewReader(a), 0)
+	fmt.Printf("M:%s\n", m)
+}
+
 func (s *MySuite) BenchmarkConnectMessage(c *C) {
 	msg := NewConnectMessage()
 	msg.Magic = []byte("MQTT")

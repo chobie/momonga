@@ -11,15 +11,16 @@ import (
 	"github.com/chobie/momonga/client"
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	"github.com/codegangsta/cli"
-	"io"
+	"github.com/chobie/momonga/logger"
 	"net"
 	"os"
+	"time"
 )
 
 func publish(ctx *cli.Context) {
 	opt := client.Option{
-		TransporterCallback: func() (io.ReadWriteCloser, error) {
-			var conn io.ReadWriteCloser
+		TransporterCallback: func() (net.Conn, error) {
+			var conn net.Conn
 			var err error
 
 			if ctx.Bool("websocket") {
@@ -50,8 +51,6 @@ func publish(ctx *cli.Context) {
 
 	c.Connect()
 	//retain := c.Bool("r")
-	go c.Loop()
-
 	if ctx.Bool("s") {
 		// Read from Stdin
 		scanner := bufio.NewScanner(os.Stdin)
@@ -66,7 +65,7 @@ func publish(ctx *cli.Context) {
 
 func subscribe(ctx *cli.Context) {
 	opt := client.Option{
-		TransporterCallback: func() (io.ReadWriteCloser, error) {
+		TransporterCallback: func() (net.Conn, error) {
 			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ctx.String("host"), ctx.Int("port")))
 			return conn, err
 		},
@@ -92,10 +91,13 @@ func subscribe(ctx *cli.Context) {
 		fmt.Printf("msg: %s, %s\n", message.TopicName, message.Payload)
 	})
 	c.Subscribe(topic, qos)
-	c.Loop()
+	for {
+		time.Sleep(time.Second)
+	}
 }
 
 func main() {
+	logger.SetupLogging("info", "stdout")
 	app := cli.NewApp()
 	app.Name = "momonga_cli"
 	app.Usage = `Usage momonga_cli -h host -p port

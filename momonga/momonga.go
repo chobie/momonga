@@ -18,8 +18,6 @@ import (
 )
 
 func setupEngine(engine *server.Momonga) {
-	//これハメだよなー
-	engine.SetupCallback()
 }
 
 func main() {
