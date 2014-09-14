@@ -91,6 +91,18 @@ Redelivery on reconnect test succeeded
 test suite succeeded
 ```
 
+# Prebuild Binaries
+
+for linux, osx
+
+https://drone.io/github.com/chobie/momonga/files
+
+```
+wget https://drone.io/github.com/chobie/momonga/files/artifacts/bin/linux_arm/momonga
+chmod +x momonga
+./momonga
+```
+
 # License - MIT License -
 
 Copyright (c) 2014 Shuhei Tanuma,
