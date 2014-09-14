@@ -97,8 +97,8 @@ func DefaultConfiguration() *Config {
 			EnableSys:         true,
 		},
 		Server: Server{
-			LogFile:        "stderr",
-			LogLevel:       "info",
+			LogFile:        "stdout",
+			LogLevel:       "debug",
 			PidFile:        "",
 			BindAddress:    "localhost",
 			Port:           1883,
