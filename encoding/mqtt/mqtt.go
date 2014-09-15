@@ -12,6 +12,14 @@ import (
 	"io"
 )
 
+type ParseError struct {
+	reason string
+}
+
+func (self ParseError) Error() string {
+	return self.reason
+}
+
 func NewConnectMessage() *ConnectMessage {
 	message := &ConnectMessage{
 		FixedHeader: FixedHeader{
@@ -211,7 +219,7 @@ func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 	}
 
 	if max_length > 0 && header.RemainingLength > max_length {
-		return nil, errors.New(fmt.Sprintf("Payload exceedes server limit. %d bytes", header.RemainingLength))
+		return nil, errors.New(fmt.Sprintf("Payload exceedes limit. %d bytes", header.RemainingLength))
 	}
 
 	switch header.GetType() {
@@ -297,7 +305,7 @@ func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 		mm.decode(reader)
 		message = mm
 	default:
-		return nil, errors.New(fmt.Sprintf("Not supported: %d\n", header.GetType()))
+		return nil, &ParseError{fmt.Sprintf("Not supported: %d\n", header.GetType())}
 	}
 
 	return message, nil

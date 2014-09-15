@@ -123,3 +123,16 @@ func LoadConfiguration(configFile string) (*Config, error) {
 
 	return config, nil
 }
+
+func LoadConfigurationTo(configFile string, to *Config) error {
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return err
+	}
+
+	if _, err2 := toml.Decode(string(data), to); err != nil {
+		return err2
+	}
+
+	return nil
+}

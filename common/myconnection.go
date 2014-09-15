@@ -2,12 +2,13 @@
 // Use of this source code is governed by a MIT license
 // that can be found in the LICENSE file.
 
-package client
+package common
 
 import (
 	"bufio"
 	"fmt"
 	codec "github.com/chobie/momonga/encoding/mqtt"
+	"github.com/chobie/momonga/flags"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
 	"io"
@@ -45,6 +46,7 @@ type MyConnection struct {
 	Reader           *bufio.Reader
 	Writer           *bufio.Writer
 	KeepLoop         bool
+	guid             util.Guid
 }
 
 func (self *MyConnection) SetOpaque(opaque interface{}) {
@@ -80,7 +82,6 @@ func NewMyConnection() *MyConnection {
 	}
 
 	c.Events["connack"] = func(result uint8) {
-		log.Debug("CONNECTED")
 		if result == 0 {
 			c.State = STATE_CONNECTED
 			if c.Reconnect {
@@ -89,7 +90,7 @@ func NewMyConnection() *MyConnection {
 				}
 			}
 
-			//TODO: このアホっぽい実装はあとでちゃんとなおす
+			//TODO: このアホっぽい実装はあとでちゃんとなおす。なおしたい
 			if len(c.OfflineQueue) > 0 {
 				c.Mutex.Lock()
 				var targets []codec.Message
@@ -126,6 +127,17 @@ func NewMyConnection() *MyConnection {
 
 	// こっちに集約できるとClientが薄くなれる
 	c.Events["publish"] = func(msg *codec.PublishMessage) {
+		if msg.QosLevel == 1 {
+			ack := codec.NewPubackMessage()
+			ack.PacketIdentifier = msg.PacketIdentifier
+			c.WriteMessageQueue(ack)
+			log.Debug("Send puback message to sender. [%s: %d]", c.GetId(), ack.PacketIdentifier)
+		} else if msg.QosLevel == 2 {
+			ack := codec.NewPubrecMessage()
+			ack.PacketIdentifier = msg.PacketIdentifier
+			c.WriteMessageQueue(ack)
+			log.Debug("Send pubrec message to sender. [%s: %d]", c.GetId(), ack.PacketIdentifier)
+		}
 	}
 
 	c.Events["puback"] = func(messageId uint16) {
@@ -506,6 +518,14 @@ func (self *MyConnection) ReadMessage() (codec.Message, error) {
 	return self.ParseMessage()
 }
 
+func (self *MyConnection) GetGuid() util.Guid {
+	return self.guid
+}
+
+func (self *MyConnection) SetGuid(id util.Guid) {
+	self.guid = id
+}
+
 func (self *MyConnection) ParseMessage() (codec.Message, error) {
 	if self.Keepalive > 0 {
 		if cn, ok := self.MyConnection.(net.Conn); ok {
@@ -715,7 +735,11 @@ func (self *MyConnection) GetRealId() string {
 }
 
 func (self *MyConnection) GetId() string {
-	return self.Id
+	if flags.Mflags["experimental.newid"] {
+		return fmt.Sprintf("%s:%d", self.Id, self.guid)
+	} else {
+		return self.Id
+	}
 }
 
 func (self *MyConnection) SetKeepaliveInterval(interval int) {

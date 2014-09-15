@@ -6,7 +6,10 @@ package server
 
 import (
 	"bytes"
+	"fmt"
+	. "github.com/chobie/momonga/common"
 	"github.com/chobie/momonga/encoding/mqtt"
+	. "github.com/chobie/momonga/flags"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
 	"sync"
@@ -33,8 +36,9 @@ type MmuxConnection struct {
 	SubscribeMap      map[string]bool
 	Created           time.Time
 	Hash              uint32
-	Mutex             *sync.RWMutex
+	Mutex             sync.RWMutex
 	SubscribedTopics  map[string]*SubscribeSet
+	guid              util.Guid
 }
 
 func NewMmuxConnection() *MmuxConnection {
@@ -45,15 +49,27 @@ func NewMmuxConnection() *MmuxConnection {
 		MaxOfflineQueue:  1000,
 		Created:          time.Now(),
 		Identifier:       "",
-		Mutex:            &sync.RWMutex{},
 		SubscribedTopics: make(map[string]*SubscribeSet),
+		CleanSession:     true,
 	}
 
 	return conn
 }
 
 func (self *MmuxConnection) GetId() string {
-	return self.Identifier
+	if Mflags["experimental.newid"] {
+		return fmt.Sprintf("%s:%d", self.Identifier, self.guid)
+	} else {
+		return self.Identifier
+	}
+}
+
+func (self *MmuxConnection) GetGuid() util.Guid {
+	return self.guid
+}
+
+func (self *MmuxConnection) SetGuid(id util.Guid) {
+	self.guid = id
 }
 
 func (self *MmuxConnection) Attach(conn Connection) {
@@ -123,6 +139,7 @@ func (self *MmuxConnection) WriteMessageQueue(request mqtt.Message) {
 		}
 		return
 	}
+
 	self.PrimaryConnection.WriteMessageQueue(request)
 }
 

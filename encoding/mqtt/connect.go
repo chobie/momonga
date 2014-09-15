@@ -186,6 +186,10 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 	self.Magic = buffer[offset : offset+int(Length)]
 	offset += int(Length)
 
+	if offset > len(buffer) {
+		return fmt.Errorf("offset: %d, buffer: %d", offset, len(buffer))
+	}
+
 	nr := bytes.NewReader(buffer[offset:])
 	binary.Read(nr, binary.BigEndian, &self.Version)
 	binary.Read(nr, binary.BigEndian, &self.Flag)
@@ -223,9 +227,9 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 
 		q := (int(self.Flag) >> 3)
 
-		if q & 0x02 > 0{
+		if q&0x02 > 0 {
 			will.Qos = 2
-		} else if q & 0x01 > 0{
+		} else if q&0x01 > 0 {
 			will.Qos = 1
 		}
 		self.Will = will

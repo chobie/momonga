@@ -6,24 +6,18 @@ package main
 
 import (
 	"flag"
-	"github.com/chobie/momonga/configuration"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/server"
 	"github.com/chobie/momonga/util"
-	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
-	"strconv"
 )
-
-func setupEngine(engine *server.Momonga) {
-}
 
 func main() {
 	foreGround := flag.Bool("foreground", true, "run as foreground")
 	configFile := flag.String("config", "config.toml", "the config file")
-	pidFile := flag.String("pidfile", "", "the pid file")
 	flag.Parse()
 
 	f, _ := os.Create("profiler")
@@ -33,15 +27,6 @@ func main() {
 		os.Exit(0)
 	}()
 
-	conf, err := configuration.LoadConfiguration(*configFile)
-	if err != nil {
-		log.Error("Can't read config.toml. use default setting.: %s", err)
-	}
-	if *pidFile != "" {
-		conf.Server.PidFile = *pidFile
-	}
-
-	log.SetupLogging(conf.Server.LogLevel, conf.Server.LogFile)
 	if !*foreGround {
 		err := util.Daemonize(0, 0)
 		if err != 0 {
@@ -50,29 +35,14 @@ func main() {
 		}
 	}
 
-	if conf.Server.PidFile != "" {
-		pid := strconv.Itoa(os.Getpid())
-		if err := ioutil.WriteFile(conf.Server.PidFile, []byte(pid), 0644); err != nil {
-			panic(err)
-		}
-		util.WritePid(conf.Server.PidFile)
-	}
+	pid := os.Getpid()
+	log.Info("Server pid: %d started", pid)
 
+	confpath, _ := filepath.Abs(*configFile)
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	engine := server.NewMomonga(conf)
-	setupEngine(engine)
-
-	t := server.NewTcpServer(engine, conf)
-	//u := server.NewUnixServer(engine, conf)
-	h := server.NewHttpServer(engine, conf)
-
-	app := server.NewApplication(engine)
-	app.RegisterServer(t)
-	//app.RegisterServer(u)
-	app.RegisterServer(h)
-
+	app := server.NewApplication(confpath)
 	app.Start()
 	app.Loop()
 
-	log.Info("Server finished")
+	log.Info("Server pid: %d finished", pid)
 }

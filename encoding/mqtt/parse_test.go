@@ -165,10 +165,10 @@ func (s *MySuite) TestConnectWillMessage(c *C) {
 	msg.CleanSession = true
 	msg.KeepAlive = uint16(10)
 	msg.Will = &WillMessage{
-		Topic: "/debug",
+		Topic:   "/debug",
 		Message: "Dead",
-		Retain: false,
-		Qos: 1,
+		Retain:  false,
+		Qos:     1,
 	}
 
 	a, _ := Encode(msg)

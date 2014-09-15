@@ -1,9 +1,14 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
 package server
 
 import (
 	"code.google.com/p/go.net/websocket"
 	"expvar"
 	"fmt"
+	"github.com/BurntSushi/toml"
+	. "github.com/chobie/momonga/common"
 	"github.com/chobie/momonga/util"
 	"io"
 	"io/ioutil"
@@ -99,6 +104,10 @@ func (self *MyHttpServer) debugRouter(w http.ResponseWriter, req *http.Request) 
 	case "/debug/qlobber/dump":
 		fmt.Fprintf(w, "qlobber:\n")
 		self.Engine.Qlobber.Dump(w)
+	case "/debug/config/dump":
+		e := toml.NewEncoder(w)
+		e.Encode(self.Engine.Config())
+
 	default:
 		return fmt.Errorf("404 %s", req.URL.Path)
 	}

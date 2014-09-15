@@ -5,6 +5,7 @@
 package server
 
 import (
+	. "github.com/chobie/momonga/common"
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	log "github.com/chobie/momonga/logger"
 )
@@ -85,6 +86,17 @@ func (self *Handler) Pubrec(messageId uint16) {
 
 func (self *Handler) Puback(messageId uint16) {
 	log.Debug("Received Puback Message from [%s: %d]", self.Connection.GetId(), messageId)
+
+	if tbl, ok := self.Engine.InflightTable[self.Connection.GetId()]; ok {
+		p, _ := tbl.Get(messageId)
+		if msg, ok := p.(*codec.PublishMessage); ok {
+			// TODO: やっぱclose済みのチャンネルにおくっちゃうよねー
+			msg.Opaque.(chan string) <- self.Connection.GetId()
+		}
+		if t, ok := self.Engine.InflightTable[self.Connection.GetId()]; ok {
+			t.Unref(messageId)
+		}
+	}
 
 	// TODO: これのIDは内部的なの？
 	self.Engine.OutGoingTable.Unref(messageId)

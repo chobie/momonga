@@ -1,35 +1,64 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
 package server
 
 import (
+	"fmt"
+	. "github.com/chobie/momonga/common"
 	"github.com/chobie/momonga/configuration"
 	log "github.com/chobie/momonga/logger"
 	"net"
+	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
 type UnixServer struct {
-	Engine  *Momonga
-	Address string
+	Engine   *Momonga
+	Address  string
+	stop     chan bool
+	listener Listener
+	inherit  bool
+	wg       *sync.WaitGroup
+	once     sync.Once
 }
 
-func NewUnixServer(engine *Momonga, config *configuration.Config) *UnixServer {
+func NewUnixServer(engine *Momonga, config *configuration.Config, inherit bool) *UnixServer {
 	t := &UnixServer{
 		Engine:  engine,
 		Address: config.GetSocketAddress(),
+		stop:    make(chan bool, 1),
+		inherit: inherit,
 	}
 
 	return t
 }
 
 func (self *UnixServer) ListenAndServe() error {
-	listener, err := net.Listen("unix", self.Address)
+	if self.inherit {
+		file := os.NewFile(uintptr(4), "sock")
+		tmp, err := net.FileListener(file)
+		file.Close()
+		if err != nil {
+			log.Error("UnixServer: %s", err)
+			return nil
+		}
 
-	if err != nil {
-		return err
+		listener := tmp.(*net.TCPListener)
+		self.listener = &MyListener{Listener: listener}
+	} else {
+		listener, err := net.Listen("unix", self.Address)
+
+		if err != nil {
+			panic(fmt.Sprintf("Error: %s", err))
+			return err
+		}
+		self.listener = &MyListener{Listener: listener}
 	}
-
-	return self.Serve(listener)
+	go self.Serve(self.listener)
+	return nil
 }
 
 func (self *UnixServer) Serve(l net.Listener) error {
@@ -39,39 +68,66 @@ func (self *UnixServer) Serve(l net.Listener) error {
 	}()
 
 	var tempDelay time.Duration // how long to sleep on accept failure
+
+Accept:
 	for {
-		client, err := l.Accept()
-		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				if tempDelay == 0 {
-					tempDelay = 5 * time.Millisecond
-				} else {
-					tempDelay *= 2
+		select {
+		case <-self.stop:
+			break Accept
+		default:
+			client, err := l.Accept()
+			if err != nil {
+				if ne, ok := err.(net.Error); ok && ne.Temporary() {
+					if tempDelay == 0 {
+						tempDelay = 5 * time.Millisecond
+					} else {
+						tempDelay *= 2
+					}
+
+					if max := 1 * time.Second; tempDelay > max {
+						tempDelay = max
+					}
+
+					log.Info("momonga: Accept error: %v; retrying in %v", err, tempDelay)
+					time.Sleep(tempDelay)
+					continue
+				}
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					log.Error("Accept Failed: %s", err)
+					continue
 				}
 
-				if max := 1 * time.Second; tempDelay > max {
-					tempDelay = max
-				}
-
-				log.Info("momonga: Accept error: %v; retrying in %v", err, tempDelay)
-				time.Sleep(tempDelay)
-				continue
+				return err
 			}
-			if !strings.Contains(err.Error(), "use of closed network connection") {
-				log.Error("Accept Failed: %s", err)
-			}
+			tempDelay = 0
 
-			return err
+			conn := NewMyConnection()
+			conn.SetMyConnection(client)
+			conn.SetId(client.RemoteAddr().String())
+
+			log.Debug("Accepted: %s", conn.GetId())
+			go self.Engine.HandleConnection(conn)
 		}
-		tempDelay = 0
-
-		conn := NewMyConnection()
-		conn.SetMyConnection(client)
-		conn.SetId(client.RemoteAddr().String())
-
-		log.Debug("Accepted: %s", conn.GetId())
-		go self.Engine.HandleConnection(conn)
 	}
 
+	self.listener.(*MyListener).wg.Wait()
+	self.once.Do(func() {
+		self.wg.Done()
+	})
 	return nil
+}
+
+func (self *UnixServer) Stop() {
+	close(self.stop)
+	self.listener.Close()
+}
+
+func (self *UnixServer) Graceful() {
+	log.Info("stop new accepting")
+	close(self.stop)
+	self.listener.Close()
+}
+
+func (self *UnixServer) Listener() Listener {
+	return self.listener
 }

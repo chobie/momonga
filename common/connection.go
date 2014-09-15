@@ -2,7 +2,7 @@
 // Use of this source code is governed by a MIT license
 // that can be found in the LICENSE file.
 
-package server
+package common
 
 import (
 	"github.com/chobie/momonga/encoding/mqtt"
@@ -61,6 +61,8 @@ type Connection interface {
 	RemoveSubscribedTopic(string)
 	SetKeepaliveInterval(int)
 	GetId() string
+	GetGuid() util.Guid
+	SetGuid(util.Guid)
 	GetRealId() string
 	SetId(string)
 	DisableClearSession()

@@ -8,15 +8,18 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	_ "errors"
 	"fmt"
+	. "github.com/chobie/momonga/common"
 	"github.com/chobie/momonga/configuration"
 	"github.com/chobie/momonga/datastore"
 	codec "github.com/chobie/momonga/encoding/mqtt"
+	. "github.com/chobie/momonga/flags"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
 	"io"
+	"math/rand"
+	"os"
 	"regexp"
 	"runtime"
 	"strings"
@@ -31,7 +34,6 @@ var (
 	V3_VERSION   = uint8(3)
 )
 
-
 type DisconnectError struct {
 }
 
@@ -41,17 +43,6 @@ func (e *DisconnectError) Error() string { return "received disconnect message" 
 type Retryable struct {
 	Id      string
 	Payload interface{}
-}
-
-type SubscribeSet struct {
-	ClientId    string `json:"client_id"`
-	TopicFilter string `json:"topic_filter"`
-	QoS         int    `json:"qos"`
-}
-
-func (self *SubscribeSet) String() string {
-	b, _ := json.Marshal(self)
-	return string(b)
 }
 
 // QoS 1, 2 are available. but really suck implementation.
@@ -69,6 +60,7 @@ func NewMomonga(config *configuration.Config) *Momonga {
 		DataStore:     datastore.NewMemstore(),
 		LockPool:      map[uint32]*sync.RWMutex{},
 		config:        config,
+		InflightTable: map[string]*util.MessageTable{},
 	}
 
 	// initialize lock pool
@@ -89,6 +81,7 @@ goroutine (2)
 type Momonga struct {
 	publishQueue  chan *codec.PublishMessage
 	OutGoingTable *util.MessageTable
+	InflightTable map[string]*util.MessageTable
 	Qlobber       *util.Qlobber
 	// TODO: improve this.
 	Connections  map[string]*MmuxConnection
@@ -100,6 +93,7 @@ type Momonga struct {
 	DataStore    datastore.Datastore
 	LockPool     map[uint32]*sync.RWMutex
 	config       *configuration.Config
+	guidFactory  util.GuidFactory
 }
 
 func (self *Momonga) DisableSys() {
@@ -263,7 +257,7 @@ func (self *Momonga) SendMessage(topic string, message []byte, qos int) {
 
 func (self *Momonga) GetConnectionByClientId(clientId string) (*MmuxConnection, error) {
 	hash := util.MurmurHash([]byte(clientId))
-	key := hash % 64
+	key := hash % uint32(self.config.Engine.LockPoolSize)
 
 	self.LockPool[key].RLock()
 	if cn, ok := self.Connections[clientId]; ok {
@@ -277,11 +271,20 @@ func (self *Momonga) GetConnectionByClientId(clientId string) (*MmuxConnection, 
 
 func (self *Momonga) SetConnectionByClientId(clientId string, conn *MmuxConnection) {
 	hash := util.MurmurHash([]byte(clientId))
-	key := hash % 64
+	key := hash % uint32(self.config.Engine.LockPoolSize)
 
 	self.LockPool[key].Lock()
 	defer self.LockPool[key].Unlock()
 	self.Connections[clientId] = conn
+}
+
+func (self *Momonga) RemoveConnectionByClientId(clientId string) {
+	hash := util.MurmurHash([]byte(clientId))
+	key := hash % uint32(self.config.Engine.LockPoolSize)
+
+	self.LockPool[key].Lock()
+	delete(self.Connections, clientId)
+	self.LockPool[key].Unlock()
 }
 
 func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
@@ -307,6 +310,158 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 			buffer := bytes.NewBuffer(nil)
 			codec.WriteMessageTo(msg, buffer)
 			self.DataStore.Put([]byte(msg.TopicName), buffer.Bytes())
+		}
+	}
+
+	if Mflags["experimental.qos1"] {
+		if msg.QosLevel == 1 {
+			targets := self.Qlobber.Match(msg.TopicName)
+
+			go func(msg *codec.PublishMessage, set []interface{}) {
+				p := make(chan string, 1000)
+				wg := sync.WaitGroup{}
+				wg.Add(3) // bulk sernder, retry kun, receive kun
+
+				mchan := make(chan string, 256)
+				term := make(chan bool, 1)
+				cnt := len(set)
+				mng := make(map[string]*codec.PublishMessage)
+
+				// retry kun。こういう実装だととても楽
+				go func(term chan bool, mchan chan string, mng map[string]*codec.PublishMessage) {
+					for {
+						select {
+						case m := <-mchan:
+							if msg, ok := mng[m]; ok {
+								conn, err := self.GetConnectionByClientId(m)
+								if err != nil {
+									fmt.Printf("something wrong: %s %s", m, err)
+									continue
+								}
+								if int64(conn.GetGuid()) != msg.Guid {
+									fmt.Printf("guid is different. resolved\n")
+									p <- m
+									continue
+								}
+
+								if err == nil {
+									log.Debug("sending a retry msg: %s", msg)
+									conn.WriteMessageQueue(msg)
+								} else {
+									log.Debug("connection not exist. next retry")
+								}
+							}
+						case <-term:
+							log.Debug("  retry finished.")
+
+							wg.Done()
+							return
+						}
+					}
+				}(term, mchan, mng)
+
+				// reader
+				go func(p chan string, term chan bool, cnt int, mng map[string]*codec.PublishMessage, mchan chan string) {
+					limit := time.After(time.Second * 60)
+					for {
+						select {
+						case id := <-p:
+							cnt--
+							delete(mng, id)
+							// これはcallbackでやってもいいようなきもするけど、wait groupとかもろもろ渡すの面倒くさい
+
+							if cnt < 1 {
+								log.Debug("  all delivery finished.")
+								term <- true
+
+								wg.Done()
+								return
+							}
+						case <-time.After(time.Second * 20):
+							// 終わってないやつをなめてリトライさせる
+							for cid, m := range mng {
+								m.Dupe = true
+								mchan <- cid
+							}
+						case <-limit:
+							log.Debug("  gave up retry.")
+							term <- true
+							wg.Done()
+							return
+						}
+					}
+				}(p, term, cnt, mng, mchan)
+
+				// sender. これは勝手に終わる
+				go func(msg *codec.PublishMessage, set []interface{}, p chan string, mng map[string]*codec.PublishMessage) {
+					dp := make(map[string]bool)
+					for i := range targets {
+						var tbl *util.MessageTable
+						var ok bool
+
+						myset := targets[i].(*SubscribeSet)
+						fmt.Printf("myset: %s", myset)
+
+						// NOTE (from interoperability/client_test.py):
+						//
+						//   overlapping subscriptions. When there is more than one matching subscription for the same client for a topic,
+						//   the server may send back one message with the highest QoS of any matching subscription, or one message for
+						//   each subscription with a matching QoS.
+						//
+						// Currently, We choose one message for each subscription with a matching QoS.
+						//
+						if _, ok := dp[myset.ClientId]; ok {
+							continue
+						}
+						dp[myset.ClientId] = true
+
+						x, _ := codec.CopyPublishMessage(msg)
+						x.QosLevel = myset.QoS
+						conn, err := self.GetConnectionByClientId(myset.ClientId)
+						// これは面倒臭い。clean sessionがtrueで再接続した時はもはや別人として扱わなければならない
+						if conn.GetId() != myset.ClientId {
+							log.Info("different guid")
+							continue
+						}
+
+						if x.QosLevel == 0 {
+							// QoS 0にダウングレードしたらそのまま終わらせる
+							conn.WriteMessageQueue(x)
+							p <- myset.ClientId
+							continue
+						}
+
+						if tbl, ok = self.InflightTable[myset.ClientId]; !ok {
+							self.InflightTable[myset.ClientId] = util.NewMessageTable()
+							// callback仕込めるんだよなー。QoS1なら使わなくてもいいかなー。とかおもったり
+
+							tbl = self.InflightTable[myset.ClientId]
+						}
+
+						id := tbl.NewId()
+						x.PacketIdentifier = id
+						x.Opaque = p
+						tbl.Register2(id, x, 1, x)
+
+						if err != nil {
+							continue
+						}
+						mng[myset.ClientId] = x
+						conn.WriteMessageQueue(x)
+					}
+					log.Debug("  all fisrt delivery finished.")
+
+					wg.Done()
+				}(msg, targets, p, mng)
+
+				wg.Wait()
+				close(p)
+				close(mchan)
+				close(term)
+				mng = nil
+				log.Debug("  okay, cleanup qos1 sending thread.")
+			}(msg, targets)
+			return
 		}
 	}
 
@@ -373,12 +528,6 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 			x.QosLevel = subscriberQos
 		}
 
-		if x.QosLevel < 0 {
-			// もうこれはおきないべー、ってのを確認
-			panic(fmt.Sprintf("qos under zero : %d(%s can't fetch. already unsubscribe or disconntected?)\n", x.QosLevel, clientId))
-			continue
-		}
-
 		if x.QosLevel > 0 {
 			// TODO: ClientごとにInflightTableを持つ
 			// engineのOutGoingTableなのはとりあえず、ということ
@@ -437,8 +586,7 @@ func (self *Momonga) Work() {
 	// TODO: improve this
 	for {
 		select {
-		// this is kind of a Write Queue.
-		// 個々を並列化するためにはlockとかをきちんとやらないといけない
+		// とにかくQos0の配送をFanoutさせるのが目的だったけど、、、いらなくね？
 		case m := <-self.publishQueue:
 			// NOTE: ここは単純にdestinationに対して送る、だけにしたい
 			// 時間がかかる処理をやってはいけない
@@ -533,23 +681,44 @@ func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *Mmu
 	// clean周りはAttachでぜんぶやるべきでは
 	conn.WriteMessageQueue(reply)
 	if mux != nil {
-		log.Debug("Attach to mux[%s]", mux.GetId())
+		log.Info("Attach to mux[%s]", mux.GetId())
 
 		conn.SetId(p.Identifier)
 		conn.SetKeepaliveInterval(int(p.KeepAlive))
 		mux.SetKeepaliveInterval(int(p.KeepAlive))
 		mux.SetState(STATE_CONNECTED)
 		mux.DisableClearSession()
+		conn.SetGuid(mux.GetGuid())
 
 		if conn.ShouldClearSession() {
 			self.CleanSubscription(mux)
+
+			if Mflags["experimental.newid"] {
+				self.SetConnectionByClientId(mux.GetId(), mux)
+				self.RemoveConnectionByClientId(mux.Identifier)
+			}
+		} else {
+			if Mflags["experimental.newid"] {
+				// idを戻してもどす。
+				for t, v := range mux.GetSubscribedTopics() {
+					self.Qlobber.Remove(t, v)
+					v.ClientId = mux.GetId()
+					self.Qlobber.Add(t, v)
+				}
+				self.SetConnectionByClientId(mux.GetId(), mux)
+				self.RemoveConnectionByClientId(mux.Identifier)
+			}
 		}
 		mux.Attach(conn)
 	} else {
 		mux = NewMmuxConnection()
 		mux.SetId(p.Identifier)
+		i, _ := self.guidFactory.NewGUID(int64(mux.GetHash()))
+		mux.SetGuid(i)
+		conn.SetGuid(i)
+
 		mux.Attach(conn)
-		self.SetConnectionByClientId(p.Identifier, mux)
+		self.SetConnectionByClientId(mux.GetId(), mux)
 
 		conn.SetId(p.Identifier)
 		conn.SetKeepaliveInterval(int(p.KeepAlive))
@@ -560,6 +729,7 @@ func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *Mmu
 	}
 
 	if p.CleanSession {
+		// これは正直どうでもいい
 		delete(self.RetryMap, mux.GetId())
 	} else {
 		// Okay, attach to existing session.
@@ -627,10 +797,9 @@ func (self *Momonga) HandleConnection(conn Connection) {
 			log.Debug("DISCONNECT: %s", conn.GetId())
 			// ここでmyconnがかえる場合はhandshake前に死んでる
 			//self.Engine.CleanSubscription(conn)
-			var ok bool
-			var mux *MmuxConnection
-
-			if mux, ok = self.Connections[conn.GetId()]; ok {
+			mux, e := self.GetConnectionByClientId(conn.GetId())
+			if e != nil {
+				log.Error("(while processing disconnect)can't fetch connection: %s, %T", conn.GetId(), conn)
 			}
 
 			if _, ok := err.(*DisconnectError); !ok {
@@ -650,7 +819,20 @@ func (self *Momonga) HandleConnection(conn Connection) {
 
 				if mux.ShouldClearSession() {
 					self.CleanSubscription(mux)
-					delete(self.Connections, mux.GetId())
+					self.RemoveConnectionByClientId(mux.GetId())
+				} else {
+					// Attach出来ない対策
+					if Mflags["experimental.newid"] {
+						// idを戻してもどす
+						self.SetConnectionByClientId(mux.Identifier, mux)
+						for t, v := range mux.GetSubscribedTopics() {
+							self.Qlobber.Remove(t, v)
+							v.ClientId = mux.Identifier
+							self.Qlobber.Add(t, v)
+						}
+
+						self.RemoveConnectionByClientId(mux.GetId())
+					}
 				}
 			}
 
@@ -659,4 +841,24 @@ func (self *Momonga) HandleConnection(conn Connection) {
 			return
 		}
 	}
+}
+
+func (self *Momonga) Config() *configuration.Config {
+	return self.config
+}
+
+func (self *Momonga) Doom() {
+	for _, v := range self.Connections {
+		wait := 5 + rand.Intn(30)
+		log.Info("DOOM in %d seconds: %s\n", wait, v.GetId())
+		go func(x *MmuxConnection, wait int) {
+			time.AfterFunc(time.Second*time.Duration(wait), func() {
+				x.Close()
+			})
+		}(v, wait)
+	}
+	time.AfterFunc(time.Second*60, func() {
+		log.Info("Force Exit")
+		os.Exit(0)
+	})
 }

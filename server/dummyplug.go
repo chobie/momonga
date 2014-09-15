@@ -1,7 +1,11 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
 package server
 
 import (
 	"fmt"
+	. "github.com/chobie/momonga/common"
 	"github.com/chobie/momonga/encoding/mqtt"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
@@ -206,4 +210,11 @@ func (self *DummyPlug) DisableClearSession() {
 
 func (self *DummyPlug) ShouldClearSession() bool {
 	return false
+}
+
+func (self *DummyPlug) GetGuid() util.Guid {
+	return util.Guid(0)
+}
+
+func (self *DummyPlug) SetGuid(id util.Guid) {
 }

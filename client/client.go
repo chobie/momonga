@@ -1,14 +1,18 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
 package client
 
 import (
 	"fmt"
+	. "github.com/chobie/momonga/common"
 	codec "github.com/chobie/momonga/encoding/mqtt"
+	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
 	"io"
+	"net"
 	"sync"
 	"time"
-	"net"
-	log "github.com/chobie/momonga/logger"
 )
 
 type Option struct {
@@ -36,10 +40,11 @@ type Client struct {
 	Mutex           sync.RWMutex
 	Errors          chan error
 	Kicker          *time.Timer
-	term	chan bool
-	wg  sync.WaitGroup
-	offline []codec.Message
-	mu sync.RWMutex
+	term            chan bool
+	wg              sync.WaitGroup
+	offline         []codec.Message
+	mu              sync.RWMutex
+	once            sync.Once
 }
 
 func NewClient(opt Option) *Client {
@@ -53,11 +58,11 @@ func NewClient(opt Option) *Client {
 		},
 		Connection:   NewMyConnection(),
 		CleanSession: true,
-		Subscribed: make(map[string]int),
+		Subscribed:   make(map[string]int),
 		Mutex:        sync.RWMutex{},
 		Errors:       make(chan error, 128),
-		term: make(chan bool, 1),
-		offline: make([]codec.Message, 8192),
+		term:         make(chan bool, 1),
+		offline:      make([]codec.Message, 8192),
 	}
 
 	if len(opt.Magic) < 1 {
@@ -75,6 +80,7 @@ func NewClient(opt Option) *Client {
 	// TODO: should provide defaultOption function.
 	client.Option = opt
 	client.Connection.Keepalive = opt.Keepalive
+	client.Connection.KeepLoop = true
 
 	client.On("connack", func(result uint8) {
 		if result == 0 {
@@ -87,12 +93,14 @@ func NewClient(opt Option) *Client {
 		}
 	})
 	client.On("error", func(err error) {
-			if err == io.EOF {
-				client.Terminate()
-				log.Debug("UNEXPECTED TERMINATE. retry")
-				client.Connect()
-			}
+		if err == io.EOF {
+			client.Terminate()
+			log.Debug("UNEXPECTED TERMINATE. retry")
+			time.Sleep(time.Second * 3)
+			client.Connect()
+		}
 	})
+
 	return client
 }
 
@@ -109,15 +117,14 @@ func (self *Client) Connect() error {
 	if err != nil {
 		log.Error("Error; %s", err)
 		time.AfterFunc(time.Second, func() {
-				self.Connect()
+			self.Connect()
 		})
 		return err
 	}
 
 	go self.Loop()
+	self.once = sync.Once{}
 	self.Connection.SetMyConnection(connection)
-
-	self.Connection.KeepLoop = true
 
 	// send a connect message to MQTT Server
 	msg := codec.NewConnectMessage()
@@ -161,23 +168,29 @@ func (self *Client) Terminate() {
 	self.mu.Lock()
 	defer self.mu.Unlock()
 
-	if self.Connection.State != STATE_CLOSED {
-		self.term <- true
-		self.Connection.Close()
-	}
+	self.once.Do(func() {
+		if self.Connection.State != STATE_CLOSED {
+			self.term <- true
+			self.Connection.Close()
+		}
+	})
 }
 
 func (self *Client) Loop() {
+	log.Info("Running Loop")
 	// TODO: consider interface. for now, just print it.
 	for {
 		select {
 		case e := <-self.Errors:
 			log.Error("ERROR: %s\n", e)
-		case <- self.term:
-			// Close
+			self.Terminate()
 			return
+			//		case <-self.term:
+			//			// Close
+			//			log.Info("FIN")
+			//			return
 		default:
-		// TODO: move this function to connect (実際にReadするやつ)
+			// TODO: move this function to connect (実際にReadするやつ)
 			switch self.Connection.State {
 			case STATE_CONNECTED, STATE_CONNECTING:
 				_, err := self.Connection.ParseMessage()
@@ -194,15 +207,21 @@ func (self *Client) Loop() {
 						}
 					} else if err == io.EOF {
 						self.Terminate()
+						return
 					} else if err.Error() == "use of closed network connection" {
 						self.Terminate()
+						return
+					} else if e, ok := err.(codec.ParseError); ok {
+						log.Debug("ParseError: %s", e)
+						self.Terminate()
+						return
 					} else {
 						self.Errors <- err
 					}
 				}
 			case STATE_CLOSED:
 				// TODO: implement exponential backoff
-				log.Debug("Sleep")
+				log.Info("Sleep")
 				time.Sleep(time.Second * 3)
 
 				err := self.Connect()

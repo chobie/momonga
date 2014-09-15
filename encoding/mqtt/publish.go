@@ -18,6 +18,8 @@ type PublishMessage struct {
 	PacketIdentifier uint16      `json:"identifier"`
 	Payload          []byte      `json:"payload"`
 	Opaque           interface{} `json:"-"`
+
+	Guid int64 `json:"guid"`
 }
 
 func (self *PublishMessage) decode(reader io.Reader) error {
@@ -38,6 +40,10 @@ func (self *PublishMessage) decode(reader io.Reader) error {
 			return fmt.Errorf("PublishMessage::Decode: %s", err)
 		}
 		offset += i
+	}
+
+	if int(length) > len(buffer) {
+		return fmt.Errorf("publish length: %d, buffer: %d", length, len(buffer))
 	}
 
 	self.TopicName = string(buffer[0:length])

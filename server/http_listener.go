@@ -1,13 +1,21 @@
+// Copyright 2014, Shuhei Tanuma. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
 package server
 
 import (
+	log "github.com/chobie/momonga/logger"
 	"net"
 	"os"
+	"sync"
 )
 
 type HttpListener struct {
 	net.Listener
 	WebSocketMount string
+	mutex          sync.RWMutex
+	wg             sync.WaitGroup
+	close          chan bool
 }
 
 func NewHttpListener(listener net.Listener) *HttpListener {
@@ -19,7 +27,20 @@ func NewHttpListener(listener net.Listener) *HttpListener {
 }
 
 func (self *HttpListener) Accept() (c net.Conn, err error) {
-	return self.Listener.Accept()
+	c, err = self.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		// If we didn't accept, we decrement our presumptuous count above.
+		if c == nil {
+			self.wg.Done()
+		}
+	}()
+
+	self.wg.Add(1)
+	return &MyConn{Conn: c, wg: &self.wg}, nil
+
 }
 
 func (self *HttpListener) Close() error {
@@ -31,5 +52,11 @@ func (self *HttpListener) Addr() net.Addr {
 }
 
 func (self *HttpListener) File() (f *os.File, err error) {
+	if tl, ok := self.Listener.(*net.TCPListener); ok {
+		file, _ := tl.File()
+		return file, nil
+	}
+	log.Info("HttpListener Failed to convert file: %T", self.Listener)
+
 	return nil, nil
 }
