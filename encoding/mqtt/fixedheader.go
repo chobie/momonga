@@ -7,7 +7,6 @@ package mqtt
 import (
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io"
 )
 
@@ -62,7 +61,7 @@ func (self *FixedHeader) GetTypeAsString() string {
 	}
 }
 
-func (self *FixedHeader) writeTo(length uint8, w io.Writer) (int64, error) {
+func (self *FixedHeader) writeTo(length int, w io.Writer) (int64, error) {
 	var flag uint8 = uint8(self.Type << 0x04)
 
 	if self.Retain > 0 {
@@ -83,13 +82,12 @@ func (self *FixedHeader) writeTo(length uint8, w io.Writer) (int64, error) {
 
 	err := binary.Write(w, binary.BigEndian, flag)
 	if err != nil {
-		fmt.Printf("Error: %s\n", err)
+		return 0, err
 	}
 
-	// TODO: これ可変長なのよね
-	err = binary.Write(w, binary.BigEndian, uint8(length))
+	_, err = WriteVarint(w, length)
 	if err != nil {
-		fmt.Printf("Error: %s\n", err)
+		return 0, err
 	}
 
 	return int64(2), nil
@@ -106,6 +104,7 @@ func (self *FixedHeader) decode(reader io.Reader) error {
 	flag := FirstByte & 0x0f
 
 	length, _ := ReadVarint(reader)
+
 	self.Type = PacketType(mt)
 	self.Dupe = ((flag & 0x08) > 0)
 
@@ -119,7 +118,6 @@ func (self *FixedHeader) decode(reader io.Reader) error {
 		self.QosLevel = 1
 	}
 	self.RemainingLength = length
-
 	return nil
 }
 

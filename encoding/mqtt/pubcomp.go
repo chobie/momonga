@@ -5,7 +5,6 @@
 package mqtt
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"io"
@@ -16,12 +15,6 @@ type PubcompMessage struct {
 	PacketIdentifier uint16
 }
 
-func (self *PubcompMessage) encode() ([]byte, int, error) {
-	buffer := bytes.NewBuffer(nil)
-	binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
-	return buffer.Bytes(), 2, nil
-}
-
 func (self *PubcompMessage) decode(reader io.Reader) error {
 	binary.Read(reader, binary.BigEndian, &self.PacketIdentifier)
 	return nil
@@ -29,7 +22,7 @@ func (self *PubcompMessage) decode(reader io.Reader) error {
 
 func (self *PubcompMessage) WriteTo(w io.Writer) (int64, error) {
 	var fsize = 2
-	size, err := self.FixedHeader.writeTo(uint8(fsize), w)
+	size, err := self.FixedHeader.writeTo(fsize, w)
 	if err != nil {
 		return 0, err
 	}

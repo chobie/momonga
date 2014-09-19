@@ -6,11 +6,10 @@ package util
 
 import (
 	"crypto/rand"
-	log "github.com/chobie/momonga/logger"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"strconv"
-	"syscall"
 )
 
 func GenerateId(n int) string {
@@ -35,41 +34,36 @@ func WritePid(pidFile string) {
 }
 
 func Daemonize(nochdir, noclose int) int {
-	var ret uintptr
-	var err syscall.Errno
+	if os.Getenv("DAEMONIZE") != "TRUE" {
+		var pwd string
 
-	ret, _, err = syscall.Syscall(syscall.SYS_FORK, 0, 0, 0)
-	if err != 0 {
-		log.Info("failed to fall fork")
-		return -1
-	}
-	switch ret {
-	case 0:
-		break
-	default:
+		path, _ := exec.LookPath(os.Args[0])
+		if nochdir == 1 {
+			pwd, _ = os.Getwd()
+		} else {
+			pwd = "/"
+		}
+		descriptors := []*os.File{
+			os.Stdin,
+			os.Stdout,
+			os.Stderr,
+		}
+		var env []string
+		for _, v := range os.Environ() {
+			env = append(env, v)
+		}
+		env = append(env, "DAEMONIZE=TRUE")
+		p, _ := os.StartProcess(path, os.Args, &os.ProcAttr{
+				Dir:   pwd,
+				Env:   env,
+				Files: descriptors,
+		})
+
+		if noclose == 0 {
+			p.Release()
+		}
 		os.Exit(0)
 	}
-	pid, err2 := syscall.Setsid()
-	if err2 != nil {
-		log.Info("failed to call setsid %+v", err2)
-	}
-	if pid == -1 {
-		return -1
-	}
 
-	if nochdir == 0 {
-		os.Chdir("/")
-	}
-
-	syscall.Umask(0)
-	if noclose == 0 {
-		f, e := os.OpenFile("/dev/null", os.O_RDWR, 0)
-		if e == nil {
-			fd := int(f.Fd())
-			syscall.Dup2(fd, int(os.Stdin.Fd()))
-			syscall.Dup2(fd, int(os.Stdout.Fd()))
-			syscall.Dup2(fd, int(os.Stderr.Fd()))
-		}
-	}
 	return 0
 }

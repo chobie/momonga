@@ -85,6 +85,11 @@ Accept:
 		default:
 			client, err := l.Accept()
 			if err != nil {
+				if v, ok := client.(*net.TCPConn); ok {
+					v.SetNoDelay(true)
+					v.SetKeepAlive(true)
+				}
+
 				if ne, ok := err.(net.Error); ok && ne.Temporary() {
 					if tempDelay == 0 {
 						tempDelay = 5 * time.Millisecond
@@ -111,7 +116,7 @@ Accept:
 			}
 			tempDelay = 0
 
-			conn := NewMyConnection()
+			conn := NewMyConnection(nil)
 			conn.SetMyConnection(client)
 			conn.SetId(client.RemoteAddr().String())
 

@@ -5,8 +5,6 @@
 package mqtt
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -211,9 +209,10 @@ func CopyMessage(msg Message) (Message, error) {
 // TODO: 読み込んだサイズ返す
 func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 	var message Message
-
+	var err error
 	header := FixedHeader{}
-	err := header.decode(reader)
+
+	err = header.decode(reader)
 	if err != nil {
 		return nil, err
 	}
@@ -227,19 +226,19 @@ func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 		mm := &ConnectMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_CONNACK:
 		mm := &ConnackMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_PUBLISH:
 		mm := &PublishMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_DISCONNECT:
 		mm := &DisconnectMessage{
@@ -250,25 +249,25 @@ func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 		mm := &SubscribeMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_SUBACK:
 		mm := &SubackMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_UNSUBSCRIBE:
 		mm := &UnsubscribeMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_UNSUBACK:
 		mm := &UnsubackMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_PINGRESP:
 		mm := &PingrespMessage{
@@ -284,294 +283,87 @@ func ParseMessage(reader io.Reader, max_length int) (Message, error) {
 		mm := &PubackMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_PUBREC:
 		mm := &PubrecMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_PUBREL:
 		mm := &PubrelMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	case PACKET_TYPE_PUBCOMP:
 		mm := &PubcompMessage{
 			FixedHeader: header,
 		}
-		mm.decode(reader)
+		err = mm.decode(reader)
 		message = mm
 	default:
 		return nil, &ParseError{fmt.Sprintf("Not supported: %d\n", header.GetType())}
 	}
 
-	return message, nil
-}
-
-func Encode(message Message) ([]byte, error) {
-	buffer := bytes.NewBuffer(nil)
-
-	switch message.GetType() {
-	case PACKET_TYPE_CONNECT:
-		connect := message.(*ConnectMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<0x4))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		// message encode
-		raw_connect, connect_size, err := connect.encode()
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-
-		err = binary.Write(buffer, binary.BigEndian, uint8(connect_size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw_connect)
-		break
-	case PACKET_TYPE_CONNACK:
-		connect := message.(*ConnackMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<0x4))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		// message encode
-		raw_connect, connect_size, err := connect.encode()
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		err = binary.Write(buffer, binary.BigEndian, uint8(connect_size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw_connect)
-		break
-	case PACKET_TYPE_PUBLISH:
-		connect := message.(*PublishMessage)
-		var flag uint8 = uint8(connect.Type << 0x04)
-
-		// TODO: Dup flag
-		if connect.Retain > 0 {
-			flag |= 0x01
-		}
-
-		if connect.QosLevel > 0 {
-			if connect.QosLevel == 1 {
-				flag |= 0x02
-			} else if connect.QosLevel == 2 {
-				flag |= 0x04
-			}
-		}
-
-		err := binary.Write(buffer, binary.BigEndian, flag)
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-
-		// message encode
-		raw_connect, connect_size, err := connect.encode()
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		err = binary.Write(buffer, binary.BigEndian, uint8(connect_size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw_connect)
-		break
-	case PACKET_TYPE_SUBSCRIBE:
-		connect := message.(*SubscribeMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<0x04|0x02))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		// message encode
-		raw_connect, connect_size, err := connect.encode()
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		err = binary.Write(buffer, binary.BigEndian, uint8(connect_size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw_connect)
-		break
-
-	case PACKET_TYPE_SUBACK:
-		connect := message.(*SubackMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<0x04))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		// message encode
-		raw_connect, connect_size, err := connect.encode()
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		err = binary.Write(buffer, binary.BigEndian, uint8(connect_size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw_connect)
-		break
-
-	case PACKET_TYPE_UNSUBSCRIBE:
-		connect := message.(*UnsubscribeMessage)
-		err := binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4|0x02))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		// message encode
-		raw_connect, connect_size, err := connect.encode()
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		err = binary.Write(buffer, binary.BigEndian, uint8(connect_size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw_connect)
-		break
-
-	case PACKET_TYPE_DISCONNECT:
-		var remaining uint8 = 0
-
-		connect := message.(*DisconnectMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
-		binary.Write(buffer, binary.BigEndian, remaining)
-		break
-
-	case PACKET_TYPE_UNSUBACK:
-		connect := message.(*UnsubackMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
-		raw, size, err := connect.encode()
-		binary.Write(buffer, binary.BigEndian, uint8(size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw)
-		break
-
-	case PACKET_TYPE_PUBACK:
-		connect := message.(*PubackMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
-		raw, size, err := connect.encode()
-		binary.Write(buffer, binary.BigEndian, uint8(size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw)
-		break
-
-	case PACKET_TYPE_PUBREC:
-		connect := message.(*PubrecMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
-		raw, size, err := connect.encode()
-		binary.Write(buffer, binary.BigEndian, uint8(size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw)
-		break
-
-	case PACKET_TYPE_PUBREL:
-		connect := message.(*PubrelMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4|0x02))
-		raw, size, err := connect.encode()
-		binary.Write(buffer, binary.BigEndian, uint8(size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw)
-		break
-
-	case PACKET_TYPE_PUBCOMP:
-		connect := message.(*PubcompMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
-		raw, size, err := connect.encode()
-		binary.Write(buffer, binary.BigEndian, uint8(size))
-		if err != nil {
-			fmt.Printf("Error: %s\n", err)
-		}
-		buffer.Write(raw)
-		break
-
-	case PACKET_TYPE_PINGREQ:
-		var remaining uint8 = 0
-
-		connect := message.(*PingreqMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
-		binary.Write(buffer, binary.BigEndian, remaining)
-		break
-
-	case PACKET_TYPE_PINGRESP:
-		var remaining uint8 = 0
-
-		connect := message.(*PingrespMessage)
-		binary.Write(buffer, binary.BigEndian, uint8(connect.Type<<4))
-		binary.Write(buffer, binary.BigEndian, remaining)
-		break
-
-	default:
-		fmt.Printf("Not supported message")
+	if err != nil {
+		return nil, err
 	}
 
-	return buffer.Bytes(), nil
+	return message, nil
 }
 
 func WriteMessageTo(message Message, w io.Writer) (int64, error) {
 	var written int64
+	var e error
 
 	switch message.GetType() {
 	case PACKET_TYPE_CONNECT:
 		m := message.(*ConnectMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_CONNACK:
 		m := message.(*ConnackMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_PUBLISH:
 		m := message.(*PublishMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_SUBSCRIBE:
 		m := message.(*SubscribeMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_SUBACK:
 		m := message.(*SubackMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_UNSUBSCRIBE:
 		m := message.(*UnsubscribeMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_DISCONNECT:
 		m := message.(*DisconnectMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_UNSUBACK:
 		m := message.(*UnsubackMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_PUBACK:
 		m := message.(*PubackMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_PUBREC:
 		m := message.(*PubrecMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_PUBREL:
 		m := message.(*PubrelMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_PUBCOMP:
 		m := message.(*PubcompMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_PINGREQ:
 		m := message.(*PingreqMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	case PACKET_TYPE_PINGRESP:
 		m := message.(*PingrespMessage)
-		written, _ = m.WriteTo(w)
+		written, e = m.WriteTo(w)
 	default:
 		fmt.Printf("Not supported message")
 	}
 
-	return written, nil
+	return written, e
 }

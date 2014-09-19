@@ -6,10 +6,9 @@ package mqtt
 
 import (
 	"bytes"
-	"fmt"
 	. "gopkg.in/check.v1"
+	"strings"
 	"testing"
-	//	"encoding/hex"
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -22,19 +21,19 @@ func (s *MySuite) TestDecodePublishMessage(c *C) {
 	m := NewPublishMessage()
 	m.TopicName = "/debug"
 	m.Payload = []byte("Hello World")
-	b, _ := Encode(m)
 
-	x, _ := ParseMessage(bytes.NewReader(b), 0)
-	xx := x.(*PublishMessage)
-	fmt.Printf("%s\n", xx)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
+	ParseMessage(bytes.NewReader(buf.Bytes()), 0)
 }
 
 func (s *MySuite) TestPublishMessage(c *C) {
 	m := NewPublishMessage()
 	m.TopicName = "/debug"
 	m.Payload = []byte("Hello World")
-	_, err := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	_, err := WriteMessageTo(m, buf)
 
 	c.Assert(err, Equals, nil)
 }
@@ -43,11 +42,12 @@ func (s *MySuite) TestPublishMessage2(c *C) {
 	m := NewPublishMessage()
 	m.TopicName = "/debug"
 	m.Payload = []byte("Hello World")
-	b, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	m.WriteTo(buffer)
-	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) BenchmarkWriteToPublishMessage(c *C) {
@@ -65,11 +65,12 @@ func (s *MySuite) BenchmarkWriteToPublishMessage(c *C) {
 
 func (s *MySuite) TestPubrecMessage(c *C) {
 	m := NewPubrecMessage()
-	b, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	m.WriteTo(buffer)
-	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) BenchmarkPubrecMessage(c *C) {
@@ -86,60 +87,66 @@ func (s *MySuite) BenchmarkPubrecMessage(c *C) {
 
 func (s *MySuite) TestPubrelMessage(c *C) {
 	m := NewPubrelMessage()
-	b, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	m.WriteTo(buffer)
-	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) TestSubackMessage(c *C) {
 	m := NewSubackMessage()
-	b, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	m.WriteTo(buffer)
-	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) TestUnsubackMessage(c *C) {
 	m := NewUnsubackMessage()
-	b, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	m.WriteTo(buffer)
-	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) TestSubscribeMessage(c *C) {
 	m := NewSubscribeMessage()
 	m.Payload = append(m.Payload, SubscribePayload{TopicPath: "/debug", RequestedQos: 2})
-	a, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	m.WriteTo(buffer)
 
-	c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) TestConnackMessage(c *C) {
 	m := NewConnackMessage()
-	b, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	m.WriteTo(buffer)
-	c.Assert(bytes.Compare(b, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) TestUnsubscribeMessage(c *C) {
 	m := NewUnsubscribeMessage()
 	m.Payload = append(m.Payload, SubscribePayload{TopicPath: "/debug", RequestedQos: 2})
-	a, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	m.WriteTo(buffer)
 
-	c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) TestConnectMessage(c *C) {
@@ -150,11 +157,12 @@ func (s *MySuite) TestConnectMessage(c *C) {
 	msg.CleanSession = true
 	msg.KeepAlive = uint16(10)
 
-	a, _ := Encode(msg)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(msg, buf)
 
 	buffer := bytes.NewBuffer(nil)
 	msg.WriteTo(buffer)
-	c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
+	c.Assert(bytes.Compare(buf.Bytes(), buffer.Bytes()), Equals, 0)
 }
 
 func (s *MySuite) TestConnectWillMessage(c *C) {
@@ -171,9 +179,10 @@ func (s *MySuite) TestConnectWillMessage(c *C) {
 		Qos:     1,
 	}
 
-	a, _ := Encode(msg)
-	m, _ := ParseMessage(bytes.NewReader(a), 0)
-	fmt.Printf("M:%s\n", m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(msg, buf)
+
+	ParseMessage(bytes.NewReader(buf.Bytes()), 0)
 }
 
 func (s *MySuite) BenchmarkConnectMessage(c *C) {
@@ -191,13 +200,28 @@ func (s *MySuite) BenchmarkConnectMessage(c *C) {
 	}
 }
 
+func (s *MySuite) TestEncodeLargePublishMessage(c *C) {
+	m := NewPublishMessage()
+	m.TopicName = "/debug"
+	m.Payload = []byte(strings.Repeat("a", 1024))
+
+	buf := bytes.NewBuffer(nil)
+	_, e := WriteMessageTo(m, buf)
+	c.Assert(e, Equals, nil)
+
+	_, e = ParseMessage(bytes.NewReader(buf.Bytes()), 0)
+	c.Assert(e, Equals, nil)
+}
+
 func (s *MySuite) BenchmarkEncode(c *C) {
 	m := NewPublishMessage()
 	m.TopicName = "/debug"
 	m.Payload = []byte("Hello World")
+	buf := bytes.NewBuffer(nil)
 
 	for i := 0; i < c.N; i++ {
-		Encode(m)
+		buf.Reset()
+		WriteMessageTo(m, buf)
 	}
 }
 
@@ -215,10 +239,11 @@ func (s *MySuite) BenchmarkParseSubscribe(c *C) {
 	m := NewSubscribeMessage()
 	m.Payload = append(m.Payload, SubscribePayload{TopicPath: "/debug"})
 	m.PacketIdentifier = 1
-	b, _ := Encode(m)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(m, buf)
 
 	for i := 0; i < c.N; i++ {
-		ParseMessage(bytes.NewReader(b), 0)
+		ParseMessage(bytes.NewReader(buf.Bytes()), 0)
 	}
 }
 
@@ -235,9 +260,10 @@ func (s *MySuite) TestParseConnectMessage(c *C) {
 		Topic:   "debug",
 		Message: "he",
 	}
-	a, _ := Encode(msg)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(msg, buf)
 
-	ParseMessage(bytes.NewReader(a), 0)
+	ParseMessage(bytes.NewReader(buf.Bytes()), 0)
 
 	//c.Assert(bytes.Compare(a, buffer.Bytes()), Equals, 0)
 }
@@ -255,9 +281,10 @@ func (s *MySuite) BenchmarkParseConnectMessage(c *C) {
 		Topic:   "debug",
 		Message: "he",
 	}
-	a, _ := Encode(msg)
+	buf := bytes.NewBuffer(nil)
+	WriteMessageTo(msg, buf)
 
 	for i := 0; i < c.N; i++ {
-		ParseMessage(bytes.NewReader(a), 0)
+		ParseMessage(bytes.NewReader(buf.Bytes()), 0)
 	}
 }

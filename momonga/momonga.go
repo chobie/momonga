@@ -12,25 +12,26 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/pprof"
+	//	"runtime/pprof"
 )
 
 func main() {
 	foreGround := flag.Bool("foreground", true, "run as foreground")
 	configFile := flag.String("config", "config.toml", "the config file")
+
 	flag.Parse()
 
-	f, _ := os.Create("profiler")
-	pprof.StartCPUProfile(f)
-	defer func() {
-		pprof.StopCPUProfile()
-		os.Exit(0)
-	}()
+	//	f, _ := os.Create("profiler")
+	//	pprof.StartCPUProfile(f)
+	//	defer func() {
+	//		pprof.StopCPUProfile()
+	//		os.Exit(0)
+	//	}()
 
 	if !*foreGround {
 		err := util.Daemonize(0, 0)
 		if err != 0 {
-			log.Info("fork failed")
+			log.Info("daemonize failed")
 			os.Exit(-1)
 		}
 	}

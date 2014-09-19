@@ -5,7 +5,6 @@
 package mqtt
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"io"
@@ -16,15 +15,9 @@ type PubrecMessage struct {
 	PacketIdentifier uint16
 }
 
-func (self *PubrecMessage) encode() ([]byte, int, error) {
-	buffer := bytes.NewBuffer(nil)
-	binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
-	return buffer.Bytes(), 2, nil
-}
-
 func (self *PubrecMessage) WriteTo(w io.Writer) (int64, error) {
 	var fsize = 2
-	size, err := self.FixedHeader.writeTo(uint8(fsize), w)
+	size, err := self.FixedHeader.writeTo(fsize, w)
 	if err != nil {
 		return 0, err
 	}

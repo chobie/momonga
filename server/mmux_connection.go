@@ -5,7 +5,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	. "github.com/chobie/momonga/common"
 	"github.com/chobie/momonga/encoding/mqtt"
@@ -140,18 +139,8 @@ func (self *MmuxConnection) WriteMessageQueue(request mqtt.Message) {
 		return
 	}
 
+	Metrics.System.Broker.Messages.Sent.Add(1)
 	self.PrimaryConnection.WriteMessageQueue(request)
-}
-
-func (self *MmuxConnection) WriteMessageQueue2(msg []byte) {
-	if self.PrimaryConnection == nil {
-		// めんどくせ
-		r, _ := mqtt.ParseMessage(bytes.NewReader(msg), 0)
-		self.OfflineQueue = append(self.OfflineQueue, r)
-		return
-	}
-
-	self.PrimaryConnection.WriteMessageQueue2(msg)
 }
 
 func (self *MmuxConnection) Close() error {
@@ -190,14 +179,6 @@ func (self *MmuxConnection) ReadMessage() (mqtt.Message, error) {
 
 	return self.PrimaryConnection.ReadMessage()
 }
-
-//func (self *MmuxConnection) Write(reader *bytes.Reader) error {
-//	if self.PrimaryConnection == nil {
-//		return nil
-//	}
-//
-//	return self.PrimaryConnection.Write(reader)
-//}
 
 func (self *MmuxConnection) IsAlived() bool {
 	if self.PrimaryConnection == nil {

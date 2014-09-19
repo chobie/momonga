@@ -7,10 +7,9 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
-	//	"encoding/hex"
-	"encoding/json"
 )
 
 type ConnectMessage struct {
@@ -64,10 +63,10 @@ func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
 		size += 2 + len(self.Password)
 	}
 
-	self.FixedHeader.writeTo(uint8(size), w)
+	self.FixedHeader.writeTo(size, w)
 	err := binary.Write(w, binary.BigEndian, headerLength)
 	if err != nil {
-		fmt.Printf("1Error: %s\n", err)
+		return 0, err
 	}
 
 	w.Write(self.Magic)
@@ -102,71 +101,6 @@ func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
 	return int64(size), nil
 }
 
-func (self *ConnectMessage) encode() ([]byte, int, error) {
-	var headerLength uint16 = uint16(len(self.Magic))
-	var size int = 0
-
-	buffer := bytes.NewBuffer(nil)
-	err := binary.Write(buffer, binary.BigEndian, headerLength)
-	if err != nil {
-		fmt.Printf("1Error: %s\n", err)
-	}
-	buffer.Write(self.Magic)
-	size += 2 + len(self.Magic)
-
-	if self.CleanSession {
-		self.Flag |= 0x02
-	}
-	if self.Will != nil {
-		self.Flag |= 0x04
-	}
-	if len(self.UserName) > 0 {
-		self.Flag |= 0x80
-	}
-	if len(self.Password) > 0 {
-		self.Flag |= 0x40
-	}
-
-	binary.Write(buffer, binary.BigEndian, self.Version)
-	binary.Write(buffer, binary.BigEndian, self.Flag)
-	binary.Write(buffer, binary.BigEndian, self.KeepAlive)
-	size += 1 + 1 + 2
-
-	var Length uint16 = 0
-	if self.Identifier != "" {
-		Length = uint16(len(self.Identifier))
-	}
-	binary.Write(buffer, binary.BigEndian, Length)
-	if Length > 0 {
-		buffer.Write([]byte(self.Identifier))
-	}
-	size += 2 + int(Length)
-
-	if (int(self.Flag)&0x04 > 0) && self.Will != nil {
-		raw_will, will_size, err := self.Will.encode()
-		if err != nil {
-		}
-		buffer.Write(raw_will)
-		size += will_size
-	}
-
-	if int(self.Flag)&0x80 > 0 {
-		Length = uint16(len(self.UserName))
-		err = binary.Write(buffer, binary.BigEndian, Length)
-		buffer.Write([]byte(self.UserName))
-		size += 2 + int(Length)
-	}
-
-	if int(self.Flag)&0x40 > 0 {
-		Length = uint16(len(self.Password))
-		err = binary.Write(buffer, binary.BigEndian, Length)
-		buffer.Write([]byte(self.Password))
-		size += 2 + int(Length)
-	}
-
-	return buffer.Bytes(), size, nil
-}
-
 func (self *ConnectMessage) decode(reader io.Reader) error {
 	var Length uint16
 
@@ -182,6 +116,11 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 
 	binary.Read(reader, binary.BigEndian, &Length)
 	offset += 2
+
+	// TODO: check buffer length
+	if self.FixedHeader.RemainingLength < offset+int(Length) {
+		return fmt.Errorf("Length overs buffer size. %d, %d", self.FixedHeader.RemainingLength, offset+int(Length))
+	}
 
 	self.Magic = buffer[offset : offset+int(Length)]
 	offset += int(Length)

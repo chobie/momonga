@@ -4,7 +4,7 @@
 package flags
 
 import (
-	log "github.com/chobie/momonga/logger"
+//	log "github.com/chobie/momonga/logger"
 )
 
 var (
@@ -26,9 +26,9 @@ func init() {
 	// まぁ、たぶんこっちが本ちゃんなのかなー、と。
 	Mflags["experimental.newid"] = true
 
-	log.Debug("=============EXPERIMENTAL FLAGS=============")
-	for k, v := range Mflags {
-		log.Debug("%s: %t", k, v)
-	}
-	log.Debug("============================================")
+	//	log.Debug("=============EXPERIMENTAL FLAGS=============")
+	//	for k, v := range Mflags {
+	//		log.Debug("%s: %t", k, v)
+	//	}
+	//	log.Debug("============================================")
 }

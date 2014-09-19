@@ -17,23 +17,10 @@ type SubackMessage struct {
 	Qos              []byte
 }
 
-func (self *SubackMessage) encode() ([]byte, int, error) {
-	buffer := bytes.NewBuffer(nil)
-	var total int = 0
-
-	binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
-	total += 2
-
-	io.Copy(buffer, bytes.NewReader(self.Qos))
-	total += len(self.Qos)
-
-	return buffer.Bytes(), total, nil
-}
-
 func (self *SubackMessage) WriteTo(w io.Writer) (int64, error) {
 	var fsize = 2 + len(self.Qos)
 
-	size, err := self.FixedHeader.writeTo(uint8(fsize), w)
+	size, err := self.FixedHeader.writeTo(fsize, w)
 	if err != nil {
 		return 0, err
 	}

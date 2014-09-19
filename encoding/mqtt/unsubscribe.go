@@ -40,24 +40,6 @@ func (self *UnsubscribeMessage) decode(reader io.Reader) error {
 	return nil
 }
 
-func (self *UnsubscribeMessage) encode() ([]byte, int, error) {
-	buffer := bytes.NewBuffer(nil)
-	var total = 0
-
-	binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
-	total += 2
-
-	for i := 0; i < len(self.Payload); i++ {
-		var length uint16 = 0
-		length = uint16(len(self.Payload[i].TopicPath))
-		binary.Write(buffer, binary.BigEndian, length)
-		buffer.Write([]byte(self.Payload[i].TopicPath))
-		total += 2 + int(length)
-	}
-
-	return buffer.Bytes(), total, nil
-}
-
 func (self *UnsubscribeMessage) WriteTo(w io.Writer) (int64, error) {
 	var total = 2
 	for i := 0; i < len(self.Payload); i++ {
@@ -65,7 +47,7 @@ func (self *UnsubscribeMessage) WriteTo(w io.Writer) (int64, error) {
 		total += 2 + int(length)
 	}
 
-	header_len, _ := self.FixedHeader.writeTo(uint8(total), w)
+	header_len, _ := self.FixedHeader.writeTo(total, w)
 	total += total + int(header_len)
 
 	binary.Write(w, binary.BigEndian, self.PacketIdentifier)

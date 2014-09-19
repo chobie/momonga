@@ -15,7 +15,7 @@ type PingreqMessage struct {
 
 func (self *PingreqMessage) WriteTo(w io.Writer) (int64, error) {
 	var fsize = 0
-	size, err := self.FixedHeader.writeTo(uint8(fsize), w)
+	size, err := self.FixedHeader.writeTo(fsize, w)
 	if err != nil {
 		return 0, err
 	}

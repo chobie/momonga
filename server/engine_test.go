@@ -7,7 +7,6 @@ import (
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	log "github.com/chobie/momonga/logger"
 	. "gopkg.in/check.v1"
-	"io"
 	"net"
 	"os"
 	"testing"
@@ -88,7 +87,7 @@ func (s *EngineSuite) TestBasic(c *C) {
 
 	// 3) engine expects net.Conn (see MockConnection)
 	mock := &MockConnection{}
-	conn := NewMyConnection()
+	conn := NewMyConnection(nil)
 	conn.SetMyConnection(mock)
 	conn.SetId("debug")
 
@@ -104,8 +103,8 @@ func (s *EngineSuite) TestBasic(c *C) {
 	msg.Identifier = "debug"
 	msg.CleanSession = true
 	msg.KeepAlive = uint16(0) // Ping is annoyed at this time
-	b, _ := codec.Encode(msg)
-	io.Copy(mock, bytes.NewReader(b))
+
+	codec.WriteMessageTo(msg, mock)
 
 	// 6) just call conn.ParseMessage(). then handler will work.
 	r, err := conn.ParseMessage()
@@ -123,8 +122,8 @@ func (s *EngineSuite) TestBasic(c *C) {
 	sub := codec.NewSubscribeMessage()
 	sub.Payload = append(sub.Payload, codec.SubscribePayload{TopicPath: "/debug"})
 	sub.PacketIdentifier = 1
-	b, _ = codec.Encode(sub)
-	io.Copy(mock, bytes.NewReader(b))
+
+	codec.WriteMessageTo(sub, mock)
 
 	// (Server)
 	r, err = conn.ParseMessage()
@@ -144,8 +143,7 @@ func (s *EngineSuite) TestBasic(c *C) {
 	pub := codec.NewPublishMessage()
 	pub.TopicName = "/debug"
 	pub.Payload = []byte("hello")
-	b, _ = codec.Encode(pub)
-	io.Copy(mock, bytes.NewReader(b))
+	codec.WriteMessageTo(pub, mock)
 
 	// (Server)
 	r, err = conn.ParseMessage()
@@ -165,8 +163,8 @@ func (s *EngineSuite) TestBasic(c *C) {
 
 	// okay, now disconnect from server
 	dis := codec.NewDisconnectMessage()
-	b, _ = codec.Encode(dis)
-	io.Copy(mock, bytes.NewReader(b))
+	codec.WriteMessageTo(dis, mock)
+
 	r, err = conn.ParseMessage()
 	c.Assert(err, Equals, nil)
 	c.Assert(r.GetType(), Equals, codec.PACKET_TYPE_DISCONNECT)
@@ -187,7 +185,7 @@ func (s *EngineSuite) BenchmarkSimple(c *C) {
 	go engine.Run()
 
 	mock := &MockConnection{}
-	conn := NewMyConnection()
+	conn := NewMyConnection(nil)
 	conn.SetMyConnection(mock)
 	conn.SetId("debug")
 
@@ -200,8 +198,7 @@ func (s *EngineSuite) BenchmarkSimple(c *C) {
 	msg.Identifier = "debug"
 	msg.CleanSession = true
 	msg.KeepAlive = uint16(0) // Ping is annoyed at this time
-	b, _ := codec.Encode(msg)
-	io.Copy(mock, bytes.NewReader(b))
+	codec.WriteMessageTo(msg, mock)
 
 	// 6) just call conn.ParseMessage(). then handler will work.
 	r, err := conn.ParseMessage()
@@ -220,8 +217,7 @@ func (s *EngineSuite) BenchmarkSimple(c *C) {
 		pub := codec.NewPublishMessage()
 		pub.TopicName = "/debug"
 		pub.Payload = []byte("hello")
-		b, _ = codec.Encode(pub)
-		io.Copy(mock, bytes.NewReader(b))
+		codec.WriteMessageTo(pub, mock)
 
 		// (Server)
 		conn.ParseMessage()

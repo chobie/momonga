@@ -101,6 +101,9 @@ func (self *Momonga) DisableSys() {
 }
 
 func (self *Momonga) Terminate() {
+	for _, v := range self.Connections {
+		v.Close()
+	}
 }
 
 func (self *Momonga) setupCallback() {
@@ -198,6 +201,7 @@ func (self *Momonga) Subscribe(p *codec.SubscribeMessage, conn Connection) {
 
 	ack := codec.NewSubackMessage()
 	ack.PacketIdentifier = p.PacketIdentifier
+	// TODO: 稀にconnがMonnectionの時がある
 	cn := conn.(*MmuxConnection)
 
 	var retained []*codec.PublishMessage
@@ -232,6 +236,7 @@ func (self *Momonga) Subscribe(p *codec.SubscribeMessage, conn Connection) {
 				retained = append(retained, pp)
 			}
 		}
+		Metrics.System.Broker.SubscriptionsCount.Add(1)
 	}
 	ack.Qos = qosBuffer.Bytes()
 
@@ -305,11 +310,13 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 			// これ配送したらおかしいべ
 			log.Debug("Deleted retain: %s", msg.TopicName)
 			// あれ、ackとかかえすんだっけ？
+			Metrics.System.Broker.Messages.RetainedCount.Add(-1)
 			return
 		} else {
 			buffer := bytes.NewBuffer(nil)
 			codec.WriteMessageTo(msg, buffer)
 			self.DataStore.Put([]byte(msg.TopicName), buffer.Bytes())
+			Metrics.System.Broker.Messages.RetainedCount.Add(1)
 		}
 	}
 
@@ -755,6 +762,8 @@ func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *Mmu
 	}
 
 	conn.Connected = true
+	Metrics.System.Broker.Clients.Connected.Add(1)
+
 	log.Debug("handshake Successful: %s", p.Identifier)
 	self.System.Broker.Clients.Connected++
 	return mux
@@ -789,9 +798,13 @@ func (self *Momonga) HandleConnection(conn Connection) {
 	for {
 		// TODO: change api name, actually this processes message
 		_, err := conn.ReadMessage()
+		if err != nil {
+			log.Debug("Read Message Error: %s", err)
+		}
 		if conn.GetState() == STATE_CLOSED {
 			err = &DisconnectError{}
 		}
+		Metrics.System.Broker.Messages.Received.Add(1)
 
 		if err != nil {
 			log.Debug("DISCONNECT: %s", conn.GetId())

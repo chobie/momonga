@@ -9,7 +9,7 @@ import (
 	codec "github.com/chobie/momonga/encoding/mqtt"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
-	"io"
+	//	"io"
 	"net"
 	"sync"
 	"time"
@@ -29,6 +29,7 @@ type Option struct {
 	UserName            string
 	Password            string
 	Keepalive           int // THIS IS REALLY TROBULESOME
+	Logger              log.Logger
 }
 
 type Client struct {
@@ -40,11 +41,12 @@ type Client struct {
 	Mutex           sync.RWMutex
 	Errors          chan error
 	Kicker          *time.Timer
-	term            chan bool
 	wg              sync.WaitGroup
 	offline         []codec.Message
 	mu              sync.RWMutex
 	once            sync.Once
+	term            chan bool
+	logger          log.Logger
 }
 
 func NewClient(opt Option) *Client {
@@ -56,14 +58,27 @@ func NewClient(opt Option) *Client {
 			Identifier: "momongacli",
 			Keepalive:  10,
 		},
-		Connection:   NewMyConnection(),
 		CleanSession: true,
 		Subscribed:   make(map[string]int),
 		Mutex:        sync.RWMutex{},
 		Errors:       make(chan error, 128),
-		term:         make(chan bool, 1),
 		offline:      make([]codec.Message, 8192),
+		term:         make(chan bool, 256),
 	}
+
+	if opt.Logger != nil {
+		client.logger = opt.Logger
+	} else {
+		client.logger = log.Global
+	}
+
+	client.Connection = NewMyConnection(&MyConfig{
+		QueueSize:        8192,
+		OfflineQueueSize: 1024,
+		Keepalive:        60,
+		WritePerSec:      10,
+		Logger:           client.logger,
+	})
 
 	if len(opt.Magic) < 1 {
 		opt.Magic = client.Option.Magic
@@ -80,6 +95,8 @@ func NewClient(opt Option) *Client {
 	// TODO: should provide defaultOption function.
 	client.Option = opt
 	client.Connection.Keepalive = opt.Keepalive
+
+	// required for client
 	client.Connection.KeepLoop = true
 
 	client.On("connack", func(result uint8) {
@@ -92,15 +109,16 @@ func NewClient(opt Option) *Client {
 			}
 		}
 	})
+
 	client.On("error", func(err error) {
-		if err == io.EOF {
-			client.Terminate()
-			log.Debug("UNEXPECTED TERMINATE. retry")
-			time.Sleep(time.Second * 3)
+		if client.Connection.State == STATE_CONNECTED {
+			client.Connection.Close()
+			time.Sleep(time.Second)
 			client.Connect()
 		}
-	})
+	}, true)
 
+	go client.Loop()
 	return client
 }
 
@@ -115,14 +133,15 @@ func (self *Client) Connect() error {
 
 	connection, err := self.Option.TransporterCallback()
 	if err != nil {
-		log.Error("Error; %s", err)
-		time.AfterFunc(time.Second, func() {
-			self.Connect()
-		})
 		return err
 	}
 
-	go self.Loop()
+	if v, ok := connection.(*net.TCPConn); ok {
+		// should enable keepalive.
+		v.SetKeepAlive(true)
+		v.SetNoDelay(true)
+	}
+
 	self.once = sync.Once{}
 	self.Connection.SetMyConnection(connection)
 
@@ -151,10 +170,9 @@ func (self *Client) Connect() error {
 		msg.Password = self.Option.Password
 	}
 
-	self.Connection.State = STATE_CONNECTING
 	self.wg.Add(1)
+	self.Connection.State = STATE_CONNECTING
 	self.Connection.WriteMessageQueue(msg)
-	log.Debug("CONNECT PROCESS")
 	return nil
 }
 
@@ -164,73 +182,37 @@ func (self *Client) WaitConnection() {
 	}
 }
 
+// terminate means loop terminate
 func (self *Client) Terminate() {
 	self.mu.Lock()
 	defer self.mu.Unlock()
 
-	self.once.Do(func() {
-		if self.Connection.State != STATE_CLOSED {
-			self.term <- true
-			self.Connection.Close()
-		}
-	})
+	self.term <- true
 }
 
 func (self *Client) Loop() {
-	log.Info("Running Loop")
+	// read loop
 	// TODO: consider interface. for now, just print it.
 	for {
 		select {
-		case e := <-self.Errors:
-			log.Error("ERROR: %s\n", e)
-			self.Terminate()
+		case <-self.term:
 			return
-			//		case <-self.term:
-			//			// Close
-			//			log.Info("FIN")
-			//			return
 		default:
 			// TODO: move this function to connect (実際にReadするやつ)
-			switch self.Connection.State {
+			switch self.Connection.GetState() {
 			case STATE_CONNECTED, STATE_CONNECTING:
-				_, err := self.Connection.ParseMessage()
-				if err != nil {
-					if nerr, ok := err.(net.Error); ok {
-						if nerr.Timeout() {
-							// Closing connection.
-							self.Terminate()
-						} else if nerr.Temporary() {
-							//log.Info("Temporary Error: %s", err)
-							self.Terminate()
-						} else {
-							fmt.Printf("damepo")
-						}
-					} else if err == io.EOF {
-						self.Terminate()
-						return
-					} else if err.Error() == "use of closed network connection" {
-						self.Terminate()
-						return
-					} else if e, ok := err.(codec.ParseError); ok {
-						log.Debug("ParseError: %s", e)
-						self.Terminate()
-						return
-					} else {
-						self.Errors <- err
-					}
+				// ここでのエラーハンドリングは重複してしまうのでやらない。On["error"]に任せる
+				_, e := self.Connection.ParseMessage()
+				if e != nil {
+					time.Sleep(time.Second)
 				}
 			case STATE_CLOSED:
 				// TODO: implement exponential backoff
-				log.Info("Sleep")
-				time.Sleep(time.Second * 3)
-
-				err := self.Connect()
-				if err != nil {
-					self.Errors <- err
-				}
-			default:
-				log.Debug("SLEEP(unknown)")
 				time.Sleep(time.Second)
+				self.Connect()
+			default:
+				time.Sleep(time.Second)
+				self.Connect()
 			}
 		}
 	}

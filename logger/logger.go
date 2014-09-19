@@ -10,6 +10,18 @@ import (
 	"path/filepath"
 )
 
+type Logger interface {
+	Info(m interface{}, args ...interface{})
+	Error(m interface{}, args ...interface{}) error
+	Debug(m interface{}, args ...interface{})
+}
+
+var Global Logger
+
+func init() {
+	Global = log.Global
+}
+
 func SetupLogging(loggingLevel, logFile string) {
 	level := log.DEBUG
 	switch loggingLevel {
@@ -22,9 +34,13 @@ func SetupLogging(loggingLevel, logFile string) {
 	}
 
 	log.Global = make(map[string]*log.Filter)
+	Global = log.Global
 	if logFile == "stdout" || logFile == "" {
 		flw := log.NewConsoleLogWriter()
 		log.AddFilter("stdout", level, flw)
+	} else if logFile == "stderr" || logFile == "" {
+		flw := log.NewConsoleLogWriter()
+		log.AddFilter("stderr", level, flw)
 	} else {
 		logFileDir := filepath.Dir(logFile)
 		os.MkdirAll(logFileDir, 0744)
@@ -39,17 +55,17 @@ func SetupLogging(loggingLevel, logFile string) {
 		flw.SetRotateDaily(true)
 	}
 
-	log.Info("Redirectoring logging to %s", logFile)
+	Global.Info("Redirectoring logging to %s %s", logFile, level)
 }
 
 func Info(message string, args ...interface{}) {
-	log.Info(message, args...)
+	Global.Info(message, args...)
 }
 
 func Error(message string, args ...interface{}) {
-	log.Error(message, args...)
+	Global.Error(message, args...)
 }
 
 func Debug(message string, args ...interface{}) {
-	log.Debug(message, args...)
+	Global.Debug(message, args...)
 }

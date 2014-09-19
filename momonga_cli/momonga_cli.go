@@ -14,10 +14,18 @@ import (
 	"github.com/codegangsta/cli"
 	"net"
 	"os"
-	"time"
+	//	"time"
 )
 
-func publish(ctx *cli.Context) {
+func setupLog(ctx *cli.Context) {
+	if ctx.Bool("v") {
+		logger.SetupLogging("debug", "stderr")
+	} else {
+		logger.SetupLogging("info", "stderr")
+	}
+}
+
+func getClient(ctx *cli.Context) *client.Client {
 	opt := client.Option{
 		TransporterCallback: func() (net.Conn, error) {
 			var conn net.Conn
@@ -31,15 +39,20 @@ func publish(ctx *cli.Context) {
 			}
 			return conn, err
 		},
-		Keepalive: 10,
-		Magic:     []byte("MQIsdp"),
-		Version:   3,
+		Keepalive: 0,
+		Magic:     []byte("MQTT"),
+		Version:   4,
 	}
 
 	opt.UserName = ctx.String("u,user")
 	opt.Password = ctx.String("P,password")
 
-	c := client.NewClient(opt)
+	return client.NewClient(opt)
+}
+
+func publish(ctx *cli.Context) {
+	setupLog(ctx)
+	c := getClient(ctx)
 
 	qos := ctx.Int("q")
 	topic := ctx.String("t")
@@ -64,23 +77,12 @@ func publish(ctx *cli.Context) {
 }
 
 func subscribe(ctx *cli.Context) {
-	opt := client.Option{
-		TransporterCallback: func() (net.Conn, error) {
-			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ctx.String("host"), ctx.Int("port")))
-			return conn, err
-		},
-		Keepalive: 10,
-		Magic:     []byte("MQIsdp"),
-		Version:   3,
-	}
-
-	opt.UserName = ctx.String("u,user")
-	opt.Password = ctx.String("P,password")
-
-	c := client.NewClient(opt)
+	setupLog(ctx)
+	c := getClient(ctx)
 
 	qos := ctx.Int("q")
 	topic := ctx.String("t")
+
 	if topic == "" {
 		fmt.Printf("Topic required\n")
 		return
@@ -88,16 +90,14 @@ func subscribe(ctx *cli.Context) {
 
 	c.Connect()
 	c.On("publish", func(message *codec.PublishMessage) {
-		fmt.Printf("msg: %s, %s\n", message.TopicName, message.Payload)
+		fmt.Printf("%s\t%s\n", message.TopicName, message.Payload)
 	})
+
 	c.Subscribe(topic, qos)
-	for {
-		time.Sleep(time.Second)
-	}
+	select {}
 }
 
 func main() {
-	logger.SetupLogging("info", "stdout")
 	app := cli.NewApp()
 	app.Name = "momonga_cli"
 	app.Usage = `Usage momonga_cli -h host -p port
@@ -140,6 +140,7 @@ func main() {
 		cli.BoolFlag{"websocket", "use websocket", ""},
 		cli.StringFlag{"origin", "", "websocket origin", ""},
 		cli.StringFlag{"url", "", "websocket url (ws://localhost:8888/mqtt)", ""},
+		cli.BoolFlag{"v", "verbose flag.", ""},
 	}
 
 	subFlags := commonFlags
@@ -164,5 +165,6 @@ func main() {
 			Action: subscribe,
 		},
 	}
+
 	app.Run(os.Args)
 }

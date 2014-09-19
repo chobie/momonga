@@ -101,7 +101,7 @@ Accept:
 			}
 			tempDelay = 0
 
-			conn := NewMyConnection()
+			conn := NewMyConnection(nil)
 			conn.SetMyConnection(client)
 			conn.SetId(client.RemoteAddr().String())
 

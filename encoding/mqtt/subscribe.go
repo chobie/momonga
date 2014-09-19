@@ -22,25 +22,6 @@ type SubscribeMessage struct {
 	Payload          []SubscribePayload
 }
 
-func (self *SubscribeMessage) encode() ([]byte, int, error) {
-	buffer := bytes.NewBuffer(nil)
-	var total int = 0
-
-	binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
-	total += 2
-
-	for i := 0; i < len(self.Payload); i++ {
-		var length uint16 = uint16(len(self.Payload[i].TopicPath))
-		binary.Write(buffer, binary.BigEndian, length)
-		buffer.Write([]byte(self.Payload[i].TopicPath))
-		binary.Write(buffer, binary.BigEndian, self.Payload[i].RequestedQos)
-
-		total += 2 + len(self.Payload[i].TopicPath) + 1
-	}
-
-	return buffer.Bytes(), total, nil
-}
-
 func (self *SubscribeMessage) WriteTo(w io.Writer) (int64, error) {
 	var total int = 0
 	total += 2
@@ -50,7 +31,7 @@ func (self *SubscribeMessage) WriteTo(w io.Writer) (int64, error) {
 		total += 2 + int(length) + 1
 	}
 
-	header_len, _ := self.FixedHeader.writeTo(uint8(total), w)
+	header_len, _ := self.FixedHeader.writeTo(total, w)
 	total += total + int(header_len)
 
 	binary.Write(w, binary.BigEndian, self.PacketIdentifier)

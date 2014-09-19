@@ -65,35 +65,29 @@ func (self *PublishMessage) WriteTo(w io.Writer) (int64, error) {
 	}
 	total += len(self.Payload)
 
-	header_len, _ := self.FixedHeader.writeTo(uint8(total), w)
+	header_len, e := self.FixedHeader.writeTo(total, w)
+	if e != nil {
+		return 0, e
+	}
 	total += int(size)
 
-	binary.Write(w, binary.BigEndian, size)
+	e = binary.Write(w, binary.BigEndian, size)
+	if e != nil {
+		return 0, e
+	}
 	w.Write([]byte(self.TopicName))
 	if self.QosLevel > 0 {
-		binary.Write(w, binary.BigEndian, self.PacketIdentifier)
+		e = binary.Write(w, binary.BigEndian, self.PacketIdentifier)
 	}
-	w.Write(self.Payload)
+	if e != nil {
+		return 0, e
+	}
+	_, e = w.Write(self.Payload)
+	if e != nil {
+		return 0, e
+	}
 
 	return int64(int(total) + int(header_len)), nil
-}
-
-func (self *PublishMessage) encode() ([]byte, int, error) {
-	buffer := bytes.NewBuffer(nil)
-	var size uint16 = uint16(len(self.TopicName))
-
-	total := 2 + int(size)
-	binary.Write(buffer, binary.BigEndian, size)
-	buffer.Write([]byte(self.TopicName))
-
-	if self.QosLevel > 0 {
-		binary.Write(buffer, binary.BigEndian, self.PacketIdentifier)
-		total += 2
-	}
-	buffer.Write(self.Payload)
-	total += len(self.Payload)
-
-	return buffer.Bytes(), total, nil
 }
 
 func (self *PublishMessage) String() string {

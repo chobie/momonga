@@ -154,7 +154,7 @@ func (self *MyHttpServer) apiRouter(w http.ResponseWriter, req *http.Request) er
 			// need for bynary frame
 			ws.PayloadType = 0x02
 
-			conn := NewMyConnection()
+			conn := NewMyConnection(nil)
 			conn.SetMyConnection(ws)
 			conn.SetId(ws.RemoteAddr().String())
 			self.Engine.HandleConnection(conn)

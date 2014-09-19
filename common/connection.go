@@ -45,7 +45,6 @@ func (e *ConnectionResetError) Error() string {
 type Connection interface {
 	//WriteMessage(request mqtt.Message) error
 	WriteMessageQueue(request mqtt.Message)
-	WriteMessageQueue2(msg []byte)
 	Close() error
 	SetState(State)
 	GetState() State

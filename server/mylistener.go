@@ -21,12 +21,6 @@ func (self *MyListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		// If we didn't accept, we decrement our presumptuous count above.
-		if c == nil {
-			self.wg.Done()
-		}
-	}()
 
 	self.wg.Add(1)
 	return &MyConn{Conn: c, wg: &self.wg}, nil

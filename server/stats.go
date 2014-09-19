@@ -8,35 +8,65 @@ import (
 	"expvar"
 )
 
-var sys_broker_clients_connected *expvar.Int
-var sys_broker_broker_uptime *expvar.Int
-var sys_broker_messages_received *expvar.Int
-var sys_broker_messages_sent *expvar.Int
-var sys_broker_messages_stored *expvar.Int
-var sys_broker_messages_publish_dropped *expvar.Int
-var sys_broker_messages_retained_count *expvar.Int
-var sys_broker_messages_inflight *expvar.Int
-var sys_broker_clients_total *expvar.Int
-var sys_broker_clients_maximum *expvar.Int
-var sys_broker_clients_disconnected *expvar.Int
-var sys_broker_load_bytes_sent *expvar.Int
-var sys_broker_load_bytes_received *expvar.Int
-var sys_broker_subscriptions_count *expvar.Int
+type MyBroker struct {
+	Clients MyClients
+	Messages MyMessages
+	Load MyLoad
+	SubscriptionsCount *expvar.Int
+	Uptime *expvar.Int
+}
 
-func init() {
-	sys_broker_clients_connected = expvar.NewInt("$SYS/broker/clients/connected")
-	sys_broker_broker_uptime = expvar.NewInt("$SYS/broker/broker/uptime")
-	sys_broker_broker_uptime = expvar.NewInt("$SYS/broker/broker/time")
-	sys_broker_load_bytes_received = expvar.NewInt("$SYS/broker/messages/received")
-	sys_broker_load_bytes_sent = expvar.NewInt("$SYS/broker/messages/sent")
-	sys_broker_messages_stored = expvar.NewInt("$SYS/broker/messages/stored")
-	sys_broker_messages_publish_dropped = expvar.NewInt("$SYS/broker/messages/publish/dropped")
-	sys_broker_messages_retained_count = expvar.NewInt("$SYS/broker/messages/retained/count")
-	sys_broker_messages_inflight = expvar.NewInt("$SYS/broker/messages/inflight")
-	sys_broker_clients_total = expvar.NewInt("$SYS/broker/clients/total")
-	sys_broker_clients_maximum = expvar.NewInt("$SYS/broker/clients/maximum")
-	sys_broker_clients_disconnected = expvar.NewInt("$SYS/broker/clients/disconnected")
-	sys_broker_load_bytes_sent = expvar.NewInt("$SYS/broker/load/bytes/sent")
-	sys_broker_load_bytes_received = expvar.NewInt("$SYS/broker/load/bytes/received")
-	sys_broker_subscriptions_count = expvar.NewInt("$SYS/broker/subscriptions/count")
+type MyMessages struct {
+	Received *expvar.Int
+	Sent *expvar.Int
+	Stored *expvar.Int
+	PublishDropped *expvar.Int
+	RetainedCount *expvar.Int
+}
+
+type MyClients struct {
+	Connected *expvar.Int
+	Total *expvar.Int
+	Maximum *expvar.Int
+	Disconnected *expvar.Int
+}
+
+type MyLoad struct {
+	BytesSend *expvar.Int
+	BytesReceived *expvar.Int
+}
+
+type MySystem struct{
+	Broker MyBroker
+}
+
+type MyMetrics struct{
+	System MySystem
+}
+
+// TODO: should not use expvar as we can't hold multiple MyMetrics metrics.
+var Metrics *MyMetrics = &MyMetrics{
+	System: MySystem{
+		Broker: MyBroker{
+			Clients: MyClients{
+				Connected: expvar.NewInt("$SYS/broker/clients/connected"),
+				Total: expvar.NewInt("$SYS/broker/clients/total"),
+				Maximum: expvar.NewInt("$SYS/broker/clients/maximum"),
+				Disconnected: expvar.NewInt("$SYS/broker/clients/disconnected"),
+			},
+			Uptime: expvar.NewInt("$SYS/broker/uptime"),
+			Messages: MyMessages{
+				Received: expvar.NewInt("$SYS/broker/messages/received"),
+				Sent: expvar.NewInt("$SYS/broker/messages/sent"),
+				Stored: expvar.NewInt("$SYS/broker/messages/stored"),
+				PublishDropped: expvar.NewInt("$SYS/broker/messages/publish/dropped"),
+				RetainedCount: expvar.NewInt("$SYS/broker/messages/retained/count"),
+			},
+			Load: MyLoad{
+				BytesSend: expvar.NewInt("$SYS/broker/load/bytes_send"),
+				BytesReceived: expvar.NewInt("$SYS/broker/load/bytes_received"),
+			},
+			SubscriptionsCount: expvar.NewInt("$SYS/broker/subscriptions/count"),
+		},
+	},
 }

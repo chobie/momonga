@@ -16,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"runtime/pprof"
 )
 
 type Application struct {
@@ -90,8 +91,8 @@ func NewApplication(configPath string) *Application {
 func (self *Application) Start() {
 	self.wg.Add(1)
 
-	ch := make(chan os.Signal, 1)
-	signals := []os.Signal{syscall.SIGINT, syscall.SIGHUP, syscall.SIGUSR2}
+	ch := make(chan os.Signal, 8)
+	signals := []os.Signal{syscall.SIGINT, syscall.SIGHUP, syscall.SIGUSR2, syscall.SIGQUIT}
 	signal.Notify(ch, signals...)
 
 	go func(ch chan os.Signal) {
@@ -101,6 +102,10 @@ func (self *Application) Start() {
 				switch x {
 				case syscall.SIGINT:
 					self.Stop()
+				case syscall.SIGQUIT:
+					pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+					pprof.Lookup("heap").WriteTo(os.Stdout, 1)
+					pprof.Lookup("block").WriteTo(os.Stdout, 1)
 				case syscall.SIGHUP:
 					// reload config
 					log.Info("reload configuration from %s", self.configPath)
@@ -178,6 +183,7 @@ func (self *Application) Stop() {
 		svr := self.Servers[i]
 		svr.Stop()
 	}
+	self.Engine.Terminate()
 
 	self.wg.Done()
 }
