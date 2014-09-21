@@ -13,7 +13,8 @@ This might contains some unreliable codes. Yes, contributions are very welcome.
 # Features
 
 * MQTT 3.1.1 compliant
-* QoS 0 supported. also QoS 1, 2 are available, although really suck implementation. don't rely it.
+* QoS 0 supported.
+* also QoS 1, 2 are available, although really suck implementation. don't rely it.
 
 Misc
 
@@ -42,6 +43,8 @@ momonga_cli
 ```
 
 # Development
+
+NOTE: momonga is still under development. API may change.
 
 ```
 mkdir momonga && cd momonga
@@ -91,7 +94,7 @@ Redelivery on reconnect test succeeded
 test suite succeeded
 ```
 
-# Prebuild Binaries
+# Prebuilt Binaries
 
 for linux, osx
 

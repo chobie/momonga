@@ -51,7 +51,7 @@ func NewMomonga(config *configuration.Config) *Momonga {
 	engine := &Momonga{
 		publishQueue:  make(chan *codec.PublishMessage, config.GetQueueSize()),
 		OutGoingTable: util.NewMessageTable(),
-		Qlobber:       util.NewQlobber(),
+		TopicMatcher:  util.NewQlobber(),
 		Connections:   map[string]*MmuxConnection{},
 		RetryMap:      map[string][]*Retryable{},
 		ErrorChannel:  make(chan *Retryable, config.GetQueueSize()),
@@ -82,7 +82,7 @@ type Momonga struct {
 	publishQueue  chan *codec.PublishMessage
 	OutGoingTable *util.MessageTable
 	InflightTable map[string]*util.MessageTable
-	Qlobber       *util.Qlobber
+	TopicMatcher  TopicMatcher
 	// TODO: improve this.
 	Connections  map[string]*MmuxConnection
 	RetryMap     map[string][]*Retryable
@@ -138,7 +138,7 @@ func (self *Momonga) setupCallback() {
 
 func (self *Momonga) CleanSubscription(conn Connection) {
 	for t, v := range conn.GetSubscribedTopics() {
-		self.Qlobber.Remove(t, v)
+		self.TopicMatcher.Remove(t, v)
 	}
 }
 
@@ -221,10 +221,10 @@ func (self *Momonga) Subscribe(p *codec.SubscribeMessage, conn Connection) {
 		}
 		binary.Write(qosBuffer, binary.BigEndian, payload.RequestedQos)
 
-		self.Qlobber.Add(payload.TopicPath, set)
+		// Retain
+		self.TopicMatcher.Add(payload.TopicPath, set)
 		conn.AppendSubscribedTopic(payload.TopicPath, set)
 		retaines := self.RetainMatch(payload.TopicPath)
-
 		if len(retaines) > 0 {
 			for i := range retaines {
 				log.Debug("Retains: %s", retaines[i].TopicName)
@@ -322,7 +322,7 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 
 	if Mflags["experimental.qos1"] {
 		if msg.QosLevel == 1 {
-			targets := self.Qlobber.Match(msg.TopicName)
+			targets := self.TopicMatcher.Match(msg.TopicName)
 
 			go func(msg *codec.PublishMessage, set []interface{}) {
 				p := make(chan string, 1000)
@@ -475,7 +475,7 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 	// Publishで受け取ったMessageIdのやつのCountをとっておく
 	// で、Pubackが帰ってきたらrefcountを下げて0になったらMessageを消す
 	//log.Debug("TopicName: %s %s", m.TopicName, m.Payload)
-	targets := self.Qlobber.Match(msg.TopicName)
+	targets := self.TopicMatcher.Match(msg.TopicName)
 	if msg.TopicName[0:1] == "#" {
 		// TODO:  [MQTT-4.7.2-1] The Server MUST NOT match Topic Filters starting with a wildcard character
 		// (# or +) with Topic Names beginning with a $ character
@@ -610,6 +610,7 @@ func (self *Momonga) Work() {
 			if cn, ok = m.Opaque.(Connection); ok {
 				cn.WriteMessageQueue(m)
 				self.System.Broker.Messages.Sent++
+				Metrics.System.Broker.Messages.Sent.Add(1)
 			} else {
 				log.Error("Opaque is not set")
 			}
@@ -708,9 +709,9 @@ func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *Mmu
 			if Mflags["experimental.newid"] {
 				// idを戻してもどす。
 				for t, v := range mux.GetSubscribedTopics() {
-					self.Qlobber.Remove(t, v)
+					self.TopicMatcher.Remove(t, v)
 					v.ClientId = mux.GetId()
-					self.Qlobber.Add(t, v)
+					self.TopicMatcher.Add(t, v)
 				}
 				self.SetConnectionByClientId(mux.GetId(), mux)
 				self.RemoveConnectionByClientId(mux.Identifier)
@@ -777,7 +778,7 @@ func (self *Momonga) Unsubscribe(messageId uint16, granted int, payloads []codec
 	topics := conn.GetSubscribedTopics()
 	for _, payload := range payloads {
 		if v, ok := topics[payload.TopicPath]; ok {
-			self.Qlobber.Remove(payload.TopicPath, v)
+			self.TopicMatcher.Remove(payload.TopicPath, v)
 		}
 	}
 	conn.WriteMessageQueue(ack)
@@ -807,6 +808,7 @@ func (self *Momonga) HandleConnection(conn Connection) {
 		Metrics.System.Broker.Messages.Received.Add(1)
 
 		if err != nil {
+			Metrics.System.Broker.Clients.Connected.Add(-1)
 			log.Debug("DISCONNECT: %s", conn.GetId())
 			// ここでmyconnがかえる場合はhandshake前に死んでる
 			//self.Engine.CleanSubscription(conn)
@@ -839,9 +841,9 @@ func (self *Momonga) HandleConnection(conn Connection) {
 						// idを戻してもどす
 						self.SetConnectionByClientId(mux.Identifier, mux)
 						for t, v := range mux.GetSubscribedTopics() {
-							self.Qlobber.Remove(t, v)
+							self.TopicMatcher.Remove(t, v)
 							v.ClientId = mux.Identifier
-							self.Qlobber.Add(t, v)
+							self.TopicMatcher.Add(t, v)
 						}
 
 						self.RemoveConnectionByClientId(mux.GetId())

@@ -54,9 +54,9 @@ func Daemonize(nochdir, noclose int) int {
 		}
 		env = append(env, "DAEMONIZE=TRUE")
 		p, _ := os.StartProcess(path, os.Args, &os.ProcAttr{
-				Dir:   pwd,
-				Env:   env,
-				Files: descriptors,
+			Dir:   pwd,
+			Env:   env,
+			Files: descriptors,
 		})
 
 		if noclose == 0 {

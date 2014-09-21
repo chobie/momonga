@@ -35,11 +35,16 @@ func (self *PublishMessage) decode(reader io.Reader) error {
 	buffer := make([]byte, remaining)
 	offset := 0
 	for offset < remaining {
-		i, err := reader.Read(buffer[offset:])
-		if err != nil {
-			return fmt.Errorf("PublishMessage::Decode: %s", err)
+		if offset > remaining {
+			panic("something went to wrong(offset overs remianing length)")
 		}
+
+		i, err := reader.Read(buffer[offset:])
 		offset += i
+		if err != nil && offset < remaining {
+			// if we read whole size of message, ignore error at this time.
+			return err
+		}
 	}
 
 	if int(length) > len(buffer) {
@@ -53,7 +58,6 @@ func (self *PublishMessage) decode(reader io.Reader) error {
 		payload_offset += 2
 	}
 	self.Payload = buffer[payload_offset:]
-
 	return nil
 }
 

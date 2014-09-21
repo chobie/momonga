@@ -91,7 +91,7 @@ func (self *MmuxConnection) Attach(conn Connection) {
 			if len(self.OfflineQueue) > 0 {
 				log.Info("Process Offline Queue: Playback: %d, %d", len(self.OfflineQueue), len(self.Connections))
 				for i := 0; i < len(self.OfflineQueue); i++ {
-					self.WriteMessageQueue(self.OfflineQueue[i])
+					self.writeMessageQueue(self.OfflineQueue[i])
 				}
 				self.OfflineQueue = self.OfflineQueue[:0]
 			}
@@ -106,6 +106,9 @@ func (self *MmuxConnection) GetRealId() string {
 }
 
 func (self *MmuxConnection) Detach(conn Connection) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
+
 	if self.PrimaryConnection == conn {
 		self.PrimaryConnection = nil
 	}
@@ -122,6 +125,14 @@ func (self *MmuxConnection) Detach(conn Connection) {
 }
 
 func (self *MmuxConnection) WriteMessageQueue(request mqtt.Message) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
+
+	self.writeMessageQueue(request)
+}
+
+// Without lock
+func (self *MmuxConnection) writeMessageQueue(request mqtt.Message) {
 	if self.PrimaryConnection == nil {
 		if request.GetType() == mqtt.PACKET_TYPE_PUBLISH {
 			if c, ok := request.(*mqtt.PublishMessage); ok {
@@ -144,12 +155,18 @@ func (self *MmuxConnection) WriteMessageQueue(request mqtt.Message) {
 }
 
 func (self *MmuxConnection) Close() error {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
+
 	if self.PrimaryConnection == nil {
 		return nil
 	}
 	return self.PrimaryConnection.Close()
 }
 func (self *MmuxConnection) SetState(state State) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
+
 	if self.PrimaryConnection == nil {
 		return
 	}
@@ -157,6 +174,8 @@ func (self *MmuxConnection) SetState(state State) {
 }
 
 func (self *MmuxConnection) GetState() State {
+	self.Mutex.RLock()
+	defer self.Mutex.RUnlock()
 	if self.PrimaryConnection == nil {
 		return STATE_DETACHED
 	}
@@ -165,6 +184,8 @@ func (self *MmuxConnection) GetState() State {
 }
 
 func (self *MmuxConnection) ResetState() {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
 	if self.PrimaryConnection == nil {
 		return
 	}
@@ -173,6 +194,9 @@ func (self *MmuxConnection) ResetState() {
 }
 
 func (self *MmuxConnection) ReadMessage() (mqtt.Message, error) {
+	self.Mutex.RLock()
+	defer self.Mutex.RUnlock()
+
 	if self.PrimaryConnection == nil {
 		return nil, nil
 	}
@@ -181,6 +205,9 @@ func (self *MmuxConnection) ReadMessage() (mqtt.Message, error) {
 }
 
 func (self *MmuxConnection) IsAlived() bool {
+	self.Mutex.RLock()
+	defer self.Mutex.RUnlock()
+
 	if self.PrimaryConnection == nil {
 		return true
 	}
@@ -189,6 +216,8 @@ func (self *MmuxConnection) IsAlived() bool {
 }
 
 func (self *MmuxConnection) SetWillMessage(msg mqtt.WillMessage) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
 	if self.PrimaryConnection == nil {
 		return
 	}
@@ -197,6 +226,9 @@ func (self *MmuxConnection) SetWillMessage(msg mqtt.WillMessage) {
 }
 
 func (self *MmuxConnection) GetWillMessage() *mqtt.WillMessage {
+	self.Mutex.RLock()
+	defer self.Mutex.RUnlock()
+
 	if self.PrimaryConnection == nil {
 		return nil
 	}
@@ -204,6 +236,9 @@ func (self *MmuxConnection) GetWillMessage() *mqtt.WillMessage {
 }
 
 func (self *MmuxConnection) HasWillMessage() bool {
+	self.Mutex.RLock()
+	defer self.Mutex.RUnlock()
+
 	if self.PrimaryConnection == nil {
 		return false
 	}
@@ -212,6 +247,9 @@ func (self *MmuxConnection) HasWillMessage() bool {
 }
 
 func (self *MmuxConnection) GetOutGoingTable() *util.MessageTable {
+	self.Mutex.RLock()
+	defer self.Mutex.RUnlock()
+
 	return self.OutGoingTable
 	//	if self.PrimaryConnection == nil {
 	//		return nil
@@ -256,6 +294,9 @@ func (self *MmuxConnection) RemoveSubscribedTopic(topic string) {
 }
 
 func (self *MmuxConnection) SetKeepaliveInterval(interval int) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
+
 	if self.PrimaryConnection == nil {
 		return
 	}
@@ -267,6 +308,9 @@ func (self *MmuxConnection) DisableClearSession() {
 }
 
 func (self *MmuxConnection) ShouldClearSession() bool {
+	self.Mutex.RLock()
+	defer self.Mutex.RUnlock()
+
 	if self.PrimaryConnection == nil {
 		return self.CleanSession
 	}
@@ -279,6 +323,9 @@ func (self *MmuxConnection) GetHash() uint32 {
 }
 
 func (self *MmuxConnection) SetId(id string) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
+
 	self.Identifier = id
 	self.Hash = util.MurmurHash([]byte(id))
 }

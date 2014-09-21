@@ -109,6 +109,7 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 
 	w := bytes.NewBuffer(buffer)
 	w.Reset()
+	//TODO: should check error
 	io.CopyN(w, reader, int64(self.FixedHeader.RemainingLength))
 
 	buffer = w.Bytes()
@@ -117,7 +118,6 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 	binary.Read(reader, binary.BigEndian, &Length)
 	offset += 2
 
-	// TODO: check buffer length
 	if self.FixedHeader.RemainingLength < offset+int(Length) {
 		return fmt.Errorf("Length overs buffer size. %d, %d", self.FixedHeader.RemainingLength, offset+int(Length))
 	}

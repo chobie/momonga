@@ -113,7 +113,7 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 
 	c.Events["connack"] = func(result uint8) {
 		if result == 0 {
-			c.State = STATE_CONNECTED
+			c.SetState(STATE_CONNECTED)
 			if c.Reconnect {
 				for key, qos := range c.SubscribeHistory {
 					c.Subscribe(key, qos)
@@ -247,7 +247,7 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 		for {
 			select {
 			case msg := <-c.Queue:
-				if c.State == STATE_CONNECTED || c.State == STATE_CONNECTING {
+				if c.GetState() == STATE_CONNECTED || c.GetState() == STATE_CONNECTING {
 					if msg.GetType() == codec.PACKET_TYPE_PUBLISH {
 						sb := msg.(*codec.PublishMessage)
 						if sb.QosLevel < 0 {
@@ -287,14 +287,16 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 }
 
 func (self *MyConnection) SetMyConnection(c io.ReadWriteCloser) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
 	if self.MyConnection != nil {
 		self.Reconnect = true
 	}
 
-	self.State = STATE_CONNECTED
 	self.MyConnection = c
 	self.Writer = bufio.NewWriterSize(self.MyConnection, defaultBufferSize)
 	self.Reader = bufio.NewReaderSize(self.MyConnection, defaultBufferSize)
+	self.State = STATE_CONNECTED
 }
 
 func (self *MyConnection) Subscribe(topic string, QoS int) error {
@@ -538,12 +540,18 @@ func (self *MyConnection) SetGuid(id util.Guid) {
 }
 
 func (self *MyConnection) ParseMessage() (codec.Message, error) {
+	//	self.Mutex.RLock()
+	//	defer self.Mutex.RUnlock()
+
 	if self.Keepalive > 0 {
 		if cn, ok := self.MyConnection.(net.Conn); ok {
 			cn.SetReadDeadline(self.Last.Add(time.Duration(int(float64(self.Keepalive)*1.5)) * time.Second))
 		}
 	}
 
+	if self.Reader == nil {
+		panic("reader is null")
+	}
 	message, err := codec.ParseMessage(self.Reader, 8192)
 	if err != nil {
 		self.logger.Debug(">>> Message: %s\n", err)
@@ -767,15 +775,16 @@ func (self *MyConnection) GetOutGoingTable() *util.MessageTable {
 }
 
 func (self *MyConnection) SetState(state State) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
 	self.State = state
 }
 
 func (self *MyConnection) GetState() State {
 	self.Mutex.RLock()
-	state := self.State
-	self.Mutex.RUnlock()
+	defer self.Mutex.RUnlock()
 
-	return state
+	return self.State
 }
 
 func (self *MyConnection) ResetState() {
@@ -841,6 +850,8 @@ func (self *MyConnection) writeMessage(msg codec.Message) error {
 }
 
 func (self *MyConnection) SetRequestPerSecondLimit(limit int) {
+	self.Mutex.Lock()
+	defer self.Mutex.Unlock()
 	if self.balancer == nil {
 		self.balancer = &util.Balancer{
 			PerSec: limit,

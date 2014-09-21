@@ -12,11 +12,11 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime/pprof"
 	"strconv"
 	"sync"
 	"syscall"
 	"time"
-	"runtime/pprof"
 )
 
 type Application struct {

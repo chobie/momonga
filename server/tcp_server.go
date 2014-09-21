@@ -62,6 +62,7 @@ func (self *TcpServer) ListenAndServe() error {
 		self.listener = &MyListener{Listener: listener}
 	}
 
+	log.Info("momonga_tcp: started tcp server: %s", self.listener.Addr().String())
 	for i := 0; i < self.config.GetAcceptorCount(); i++ {
 		go self.Serve(self.listener)
 	}
@@ -70,7 +71,6 @@ func (self *TcpServer) ListenAndServe() error {
 }
 
 func (self *TcpServer) Serve(l net.Listener) error {
-	log.Info("momonga_tcp: started tcp server")
 	defer func() {
 		l.Close()
 	}()

@@ -17,10 +17,7 @@ tls_port = 8883
 cafile = ""
 certfile = ""
 keyfile = ""
-
-	[server.websocket]
-	enabled = false
-	port = 8080
+httpport = 9000
 
 [engine]
 queue_size = 8192

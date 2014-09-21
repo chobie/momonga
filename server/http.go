@@ -99,11 +99,11 @@ func (self *MyHttpServer) debugRouter(w http.ResponseWriter, req *http.Request) 
 		self.Engine.Connections = make(map[string]*MmuxConnection)
 		fmt.Fprintf(w, "cleared")
 	case "/debug/qlobber/clear":
-		self.Engine.Qlobber = util.NewQlobber()
+		self.Engine.TopicMatcher = util.NewQlobber()
 		fmt.Fprintf(w, "cleared")
 	case "/debug/qlobber/dump":
 		fmt.Fprintf(w, "qlobber:\n")
-		self.Engine.Qlobber.Dump(w)
+		self.Engine.TopicMatcher.Dump(w)
 	case "/debug/config/dump":
 		e := toml.NewEncoder(w)
 		e.Encode(self.Engine.Config())

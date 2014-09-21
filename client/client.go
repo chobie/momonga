@@ -47,6 +47,8 @@ type Client struct {
 	once            sync.Once
 	term            chan bool
 	logger          log.Logger
+	reconnect       bool
+	count           int
 }
 
 func NewClient(opt Option) *Client {
@@ -104,8 +106,10 @@ func NewClient(opt Option) *Client {
 			client.wg.Done()
 
 			// reconnect
-			for topic, qos := range client.Subscribed {
-				client.Subscribe(topic, qos)
+			if client.reconnect {
+				for topic, qos := range client.Subscribed {
+					client.Subscribe(topic, qos)
+				}
 			}
 		}
 	})
@@ -144,6 +148,7 @@ func (self *Client) Connect() error {
 
 	self.once = sync.Once{}
 	self.Connection.SetMyConnection(connection)
+	self.wg.Add(1)
 
 	// send a connect message to MQTT Server
 	msg := codec.NewConnectMessage()
@@ -170,14 +175,17 @@ func (self *Client) Connect() error {
 		msg.Password = self.Option.Password
 	}
 
-	self.wg.Add(1)
-	self.Connection.State = STATE_CONNECTING
+	self.Connection.SetState(STATE_CONNECTING)
 	self.Connection.WriteMessageQueue(msg)
+	self.count += 1
+	if self.count > 1 {
+		self.reconnect = true
+	}
 	return nil
 }
 
 func (self *Client) WaitConnection() {
-	if self.Connection.State == STATE_CONNECTING {
+	if self.Connection.GetState() == STATE_CONNECTING {
 		self.wg.Wait()
 	}
 }
@@ -259,4 +267,8 @@ func (self *Client) Unsubscribe(topic string) {
 
 func (self *Client) Disconnect() {
 	self.Connection.Disconnect()
+}
+
+func (self *Client) SetRequestPerSecondLimit(limit int) {
+	self.Connection.SetRequestPerSecondLimit(limit)
 }
