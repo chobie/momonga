@@ -10,7 +10,28 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"expvar"
 )
+
+func GetIntValue(i *expvar.Int) int64 {
+	v := i.String()
+	vv, e := strconv.ParseInt(v, 10, 64)
+	if e != nil {
+		return 0
+	}
+
+	return vv
+}
+
+func GetFloatValue(f *expvar.Float) float64 {
+	a, e := strconv.ParseFloat(f.String(), 64)
+	if e != nil {
+		return 0
+	}
+
+	return a
+}
+
 
 func GenerateId(n int) string {
 	const alphanum = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

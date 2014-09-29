@@ -4,7 +4,6 @@
 package server
 
 import (
-	"fmt"
 	"github.com/chobie/momonga/configuration"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
@@ -19,6 +18,19 @@ import (
 	"time"
 )
 
+//
+// Application manages start / stop, singnal handling and listeners.
+//
+// +-----------+
+// |APPLICATION| start / stop, signal handling
+// +-----------+
+// |  LISTENER | listen and accept
+// +-----------+
+// |  HANDLER  | parse and execute commands
+// +-----------+
+// |  ENGINE   | implements commands api
+// +-----------+
+//
 type Application struct {
 	Engine     *Momonga
 	Servers    []Server
@@ -44,6 +56,7 @@ func NewApplication(configPath string) *Application {
 		util.WritePid(conf.Server.PidFile)
 	}
 
+	// NOTE: INHERIT=TRUE means the process invoked from os.StartProess
 	inherit := false
 	if os.Getenv("INHERIT") == "TRUE" {
 		inherit = true
@@ -58,6 +71,7 @@ func NewApplication(configPath string) *Application {
 		config:     conf,
 	}
 
+	// TODO: improve this block
 	if conf.Server.Port > 0 {
 		t := NewTcpServer(engine, conf, inherit)
 		t.wg = &app.wg
@@ -74,6 +88,13 @@ func NewApplication(configPath string) *Application {
 		app.RegisterServer(h)
 	}
 
+	if conf.Server.EnableTls && conf.Server.TlsPort > 0 {
+		h := NewTlsServer(engine, conf, inherit)
+		h.wg = &app.wg
+		app.RegisterServer(h)
+	}
+
+	// memonized application path
 	app.execPath, err = exec.LookPath(os.Args[0])
 	if err != nil {
 		log.Error("Error: %s", err)
@@ -92,6 +113,7 @@ func (self *Application) Start() {
 	self.wg.Add(1)
 
 	ch := make(chan os.Signal, 8)
+	// TODO: windows can't use signal. split this block into another file.
 	signals := []os.Signal{syscall.SIGINT, syscall.SIGHUP, syscall.SIGUSR2, syscall.SIGQUIT}
 	signal.Notify(ch, signals...)
 
@@ -103,16 +125,19 @@ func (self *Application) Start() {
 				case syscall.SIGINT:
 					self.Stop()
 				case syscall.SIGQUIT:
+					// TODO: like sigdump feature. should change file descriptor
 					pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 					pprof.Lookup("heap").WriteTo(os.Stdout, 1)
 					pprof.Lookup("block").WriteTo(os.Stdout, 1)
+
 				case syscall.SIGHUP:
 					// reload config
 					log.Info("reload configuration from %s", self.configPath)
 					configuration.LoadConfigurationTo(self.configPath, self.config)
+
 				case syscall.SIGUSR2:
-					self.mu.Lock()
 					// graceful restart
+					self.mu.Lock()
 					var env []string
 					for _, v := range os.Environ() {
 						env = append(env, v)
@@ -124,7 +149,6 @@ func (self *Application) Start() {
 						os.Stderr,
 					})
 
-					fmt.Printf("srv: %#v", self.Servers)
 					for i := 0; i < len(self.Servers); i++ {
 						svr := self.Servers[i]
 						f, e := svr.Listener().File()
@@ -161,8 +185,9 @@ func (self *Application) Start() {
 						svr.Graceful()
 					}
 					self.wg.Done()
-					self.Engine.Doom()
 
+					// Kill current connection in N seconds.
+					self.Engine.Doom()
 					self.mu.Unlock()
 					return
 				}

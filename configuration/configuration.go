@@ -19,22 +19,40 @@ type Config struct {
 }
 
 type Engine struct {
-	QueueSize         int    `toml:queue_size`
-	AcceptorCount     string `toml:acceptor_count`
-	LockPoolSize      int    `toml:lock_pool_size`
-	EnableSys         bool   `toml:"enable_sys"`
-	FanoutWorkerCount string `toml:fanout_worker_count`
+	QueueSize         int             `toml:"queue_size"`
+	AcceptorCount     string          `toml:"acceptor_count"`
+	LockPoolSize      int             `toml:"lock_pool_size"`
+	EnableSys         bool            `toml:"enable_sys"`
+	FanoutWorkerCount string          `toml:"fanout_worker_count"`
+	AllowAnonymous    bool            `toml:"allow_anonymous"`
+	Authenticators    []Authenticator `toml:"authenticator"`
+	EnablePermission  bool            `toml:"enable_permission"`
+}
+
+type Authenticator struct {
+	Type string `toml:"type"`
 }
 
 type Server struct {
-	LogFile        string `toml:"log_file"`
-	LogLevel       string `toml:"log_level"`
-	PidFile        string `toml:"pid_file"`
-	BindAddress    string `toml:"bind_address"`
-	Port           int    `toml:"port"`
-	Socket         string `toml:"socket"`
-	HttpPort       int    `toml:"http_port"`
-	WebSocketMount string `toml:"websocket_mount"`
+	User                string `toml:"user"`
+	LogFile             string `toml:"log_file"`
+	LogLevel            string `toml:"log_level"`
+	PidFile             string `toml:"pid_file"`
+	BindAddress         string `toml:"bind_address"`
+	Port                int    `toml:"port"`
+	EnableTls          bool    `toml:"enable_tls"`
+	TlsPort             int    `toml:"tls_port"`
+	Keyfile             string `toml:"keyfile"`
+	Cafile            string `toml:"cafile"`
+	Certfile            string `toml:"certfile"`
+	Socket              string `toml:"socket"`
+	HttpPort            int    `toml:"http_port"`
+	WebSocketMount      string `toml:"websocket_mount"`
+	HttpDebug           bool   `toml:"http_debug"`
+	MaxInflightMessages int    `toml:"max_inflight_messages"`
+	MaxQueuedMessages   int    `toml:"max_queued_messages"`
+	RetryInterval       int    `toml:"retry_interval"`
+	MessageSizeLimit    int    `toml:"message_size_limit"`
 }
 
 func (self *Config) GetQueueSize() int {
@@ -76,6 +94,13 @@ func (self *Config) GetListenAddress() string {
 	return fmt.Sprintf("%s:%d", self.Server.BindAddress, self.Server.Port)
 }
 
+func (self *Config) GetTlsListenAddress() string {
+	if self.Server.TlsPort <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", self.Server.BindAddress, self.Server.TlsPort)
+}
+
 func (self *Config) GetSSLListenAddress() string {
 	if self.Server.Port <= 0 {
 		return ""
@@ -87,6 +112,10 @@ func (self *Config) GetSocketAddress() string {
 	return self.Server.Socket
 }
 
+func (self *Config) GetAuthenticators() []Authenticator {
+	return self.Engine.Authenticators
+}
+
 func DefaultConfiguration() *Config {
 	return &Config{
 		Engine: Engine{
@@ -95,16 +124,26 @@ func DefaultConfiguration() *Config {
 			FanoutWorkerCount: "cpu",
 			LockPoolSize:      64,
 			EnableSys:         true,
+			AllowAnonymous:    true,
+			EnablePermission:  false,
 		},
 		Server: Server{
-			LogFile:        "stdout",
-			LogLevel:       "debug",
-			PidFile:        "",
-			BindAddress:    "localhost",
-			Port:           1883,
-			Socket:         "",
-			HttpPort:       9000,
-			WebSocketMount: "/mqtt",
+			User:                "momonga",
+			LogFile:             "stdout",
+			LogLevel:            "debug",
+			PidFile:             "",
+			BindAddress:         "localhost",
+			Port:                1883,
+			Socket:              "",
+			HttpPort:            9000,
+			WebSocketMount:      "/mqtt",
+			HttpDebug:           true,
+			MaxInflightMessages: 10000,
+			MaxQueuedMessages:   10000,
+			RetryInterval:       20,
+			MessageSizeLimit:    8192,
+			EnableTls: false,
+			TlsPort: 8883,
 		},
 	}
 }

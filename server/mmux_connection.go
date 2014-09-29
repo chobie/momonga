@@ -5,29 +5,27 @@
 package server
 
 import (
-	"fmt"
 	. "github.com/chobie/momonga/common"
 	"github.com/chobie/momonga/encoding/mqtt"
-	. "github.com/chobie/momonga/flags"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
 	"sync"
 	"time"
+	"unsafe"
+	"sync/atomic"
+	"fmt"
 )
 
 // MQTT Multiplexer Connection
 //
 // TODO: 途中で死んだとき用のやつを追加する.もうちょい素敵な実装にしたい
-// TODO: goroutine safeにする
 //
-// Multiplexer、というかなんだろ。Engineとの仲介でおいとくやつ。
-// 下のコネクションとかは純粋に接続周りだけにしておきたいんだけどなー
-//
+// Multiplexer、というかなんだろ。EngineとConnectionとの仲介でおいとくやつ。
+// Sessionがあるのでこういうふうにしとくと楽かな、と
 type MmuxConnection struct {
 	// Primary
-	PrimaryConnection Connection
+	Connection *Connection
 	OfflineQueue      []mqtt.Message
-	Connections       map[string]Connection
 	MaxOfflineQueue   int
 	Identifier        string
 	CleanSession      bool
@@ -37,13 +35,11 @@ type MmuxConnection struct {
 	Hash              uint32
 	Mutex             sync.RWMutex
 	SubscribedTopics  map[string]*SubscribeSet
-	guid              util.Guid
 }
 
 func NewMmuxConnection() *MmuxConnection {
 	conn := &MmuxConnection{
 		OutGoingTable:    util.NewMessageTable(),
-		Connections:      map[string]Connection{},
 		SubscribeMap:     map[string]bool{},
 		MaxOfflineQueue:  1000,
 		Created:          time.Now(),
@@ -56,194 +52,116 @@ func NewMmuxConnection() *MmuxConnection {
 }
 
 func (self *MmuxConnection) GetId() string {
-	if Mflags["experimental.newid"] {
-		return fmt.Sprintf("%s:%d", self.Identifier, self.guid)
-	} else {
-		return self.Identifier
-	}
-}
-
-func (self *MmuxConnection) GetGuid() util.Guid {
-	return self.guid
-}
-
-func (self *MmuxConnection) SetGuid(id util.Guid) {
-	self.guid = id
+	return self.Identifier
 }
 
 func (self *MmuxConnection) Attach(conn Connection) {
 	self.Mutex.Lock()
 	defer self.Mutex.Unlock()
 
-	if len(self.Connections) == 0 {
-		self.PrimaryConnection = conn
-		self.CleanSession = conn.ShouldClearSession()
-
-		if conn.ShouldClearSession() {
-			self.OfflineQueue = self.OfflineQueue[:0]
-			self.SubscribeMap = make(map[string]bool)
-			self.SubscribedTopics = make(map[string]*SubscribeSet)
-			self.Connections = make(map[string]Connection)
-
-			// Should I remove remaining QoS1, QoS2 message at this time?
-			self.OutGoingTable.Clean()
-		} else {
-			if len(self.OfflineQueue) > 0 {
-				log.Info("Process Offline Queue: Playback: %d, %d", len(self.OfflineQueue), len(self.Connections))
-				for i := 0; i < len(self.OfflineQueue); i++ {
-					self.writeMessageQueue(self.OfflineQueue[i])
-				}
-				self.OfflineQueue = self.OfflineQueue[:0]
-			}
-		}
+	var container Connection
+	container = conn
+	old := atomic.SwapPointer((*unsafe.Pointer)((unsafe.Pointer)(&self.Connection)), unsafe.Pointer(&container))
+	if old != nil {
+		// 1.If the ClientId represents a Client already connected to the Server
+		// then the Server MUST disconnect the existing Client [MQTT-3.1.4-2].
+		(*(*Connection)(old)).Close()
+		fmt.Printf("close existing connection")
 	}
 
-	self.Connections[conn.GetRealId()] = conn
+	self.CleanSession = conn.ShouldCleanSession()
+	if conn.ShouldCleanSession() {
+		self.OfflineQueue = self.OfflineQueue[:0]
+		self.SubscribeMap = make(map[string]bool)
+		self.SubscribedTopics = make(map[string]*SubscribeSet)
+
+		// Should I remove remaining QoS1, QoS2 message at this time?
+		self.OutGoingTable.Clean()
+	} else {
+		if len(self.OfflineQueue) > 0 {
+			log.Info("Process Offline Queue: Playback: %d", len(self.OfflineQueue))
+			for i := 0; i < len(self.OfflineQueue); i++ {
+				self.writeMessageQueue(self.OfflineQueue[i])
+			}
+			self.OfflineQueue = self.OfflineQueue[:0]
+		}
+	}
 }
 
 func (self *MmuxConnection) GetRealId() string {
 	return self.Identifier
 }
 
-func (self *MmuxConnection) Detach(conn Connection) {
-	self.Mutex.Lock()
-	defer self.Mutex.Unlock()
+func (self *MmuxConnection) Detach(conn Connection, dummy *DummyPlug) {
+	var container Connection
+	container = dummy
 
-	if self.PrimaryConnection == conn {
-		self.PrimaryConnection = nil
-	}
-
-	delete(self.Connections, conn.GetRealId())
-	if len(self.Connections) == 0 {
-		self.PrimaryConnection = nil
-	} else {
-		for _, v := range self.Connections {
-			self.PrimaryConnection = v
-			break
-		}
-	}
+	atomic.SwapPointer((*unsafe.Pointer)((unsafe.Pointer)(&self.Connection)), unsafe.Pointer(&container))
 }
 
 func (self *MmuxConnection) WriteMessageQueue(request mqtt.Message) {
-	self.Mutex.Lock()
-	defer self.Mutex.Unlock()
-
 	self.writeMessageQueue(request)
 }
 
 // Without lock
 func (self *MmuxConnection) writeMessageQueue(request mqtt.Message) {
-	if self.PrimaryConnection == nil {
+	// TODO: これそもそもmuxがあったらもうdummyか普通のか、ぐらいなような気が
+	_, is_dummy := (*self.Connection).(*DummyPlug)
+	if self.Connection == nil {
+		// already disconnected
+		return
+	} else if is_dummy {
 		if request.GetType() == mqtt.PACKET_TYPE_PUBLISH {
-			if c, ok := request.(*mqtt.PublishMessage); ok {
-				// 配送されないと思うけど念のため
-				if c.Retain > 0 {
-					// Don't keep retain message
-					return
-				}
-
-				self.OfflineQueue = append(self.OfflineQueue, request)
-			}
-		} else {
 			self.OfflineQueue = append(self.OfflineQueue, request)
 		}
-		return
 	}
 
-	Metrics.System.Broker.Messages.Sent.Add(1)
-	self.PrimaryConnection.WriteMessageQueue(request)
+	(*self.Connection).WriteMessageQueue(request)
 }
 
 func (self *MmuxConnection) Close() error {
-	self.Mutex.Lock()
-	defer self.Mutex.Unlock()
-
-	if self.PrimaryConnection == nil {
-		return nil
-	}
-	return self.PrimaryConnection.Close()
+	return (*self.Connection).Close()
 }
-func (self *MmuxConnection) SetState(state State) {
-	self.Mutex.Lock()
-	defer self.Mutex.Unlock()
 
-	if self.PrimaryConnection == nil {
-		return
-	}
-	self.PrimaryConnection.SetState(state)
+func (self *MmuxConnection) SetState(state State) {
+	(*self.Connection).SetState(state)
 }
 
 func (self *MmuxConnection) GetState() State {
-	self.Mutex.RLock()
-	defer self.Mutex.RUnlock()
-	if self.PrimaryConnection == nil {
-		return STATE_DETACHED
-	}
-
-	return self.PrimaryConnection.GetState()
+	return (*self.Connection).GetState()
 }
 
 func (self *MmuxConnection) ResetState() {
-	self.Mutex.Lock()
-	defer self.Mutex.Unlock()
-	if self.PrimaryConnection == nil {
-		return
-	}
-
-	self.PrimaryConnection.ResetState()
+	(*self.Connection).ResetState()
 }
 
 func (self *MmuxConnection) ReadMessage() (mqtt.Message, error) {
-	self.Mutex.RLock()
-	defer self.Mutex.RUnlock()
-
-	if self.PrimaryConnection == nil {
-		return nil, nil
-	}
-
-	return self.PrimaryConnection.ReadMessage()
+	return (*self.Connection).ReadMessage()
 }
 
 func (self *MmuxConnection) IsAlived() bool {
-	self.Mutex.RLock()
-	defer self.Mutex.RUnlock()
-
-	if self.PrimaryConnection == nil {
-		return true
-	}
-
-	return self.PrimaryConnection.IsAlived()
+	return (*self.Connection).IsAlived()
 }
 
 func (self *MmuxConnection) SetWillMessage(msg mqtt.WillMessage) {
 	self.Mutex.Lock()
 	defer self.Mutex.Unlock()
-	if self.PrimaryConnection == nil {
-		return
-	}
 
-	self.PrimaryConnection.SetWillMessage(msg)
+	(*self.Connection).SetWillMessage(msg)
 }
 
 func (self *MmuxConnection) GetWillMessage() *mqtt.WillMessage {
 	self.Mutex.RLock()
 	defer self.Mutex.RUnlock()
 
-	if self.PrimaryConnection == nil {
-		return nil
-	}
-	return self.PrimaryConnection.GetWillMessage()
+	return (*self.Connection).GetWillMessage()
 }
 
 func (self *MmuxConnection) HasWillMessage() bool {
 	self.Mutex.RLock()
 	defer self.Mutex.RUnlock()
 
-	if self.PrimaryConnection == nil {
-		return false
-	}
-	return self.PrimaryConnection.HasWillMessage()
-
+	return (*self.Connection).HasWillMessage()
 }
 
 func (self *MmuxConnection) GetOutGoingTable() *util.MessageTable {
@@ -251,11 +169,11 @@ func (self *MmuxConnection) GetOutGoingTable() *util.MessageTable {
 	defer self.Mutex.RUnlock()
 
 	return self.OutGoingTable
-	//	if self.PrimaryConnection == nil {
+	//	if self.Connection == nil {
 	//		return nil
 	//	}
 	//
-	//	return self.PrimaryConnection.GetOutGoingTable()
+	//	return self.Connection.GetOutGoingTable()
 }
 
 func (self *MmuxConnection) GetSubscribedTopics() map[string]*SubscribeSet {
@@ -297,25 +215,14 @@ func (self *MmuxConnection) SetKeepaliveInterval(interval int) {
 	self.Mutex.Lock()
 	defer self.Mutex.Unlock()
 
-	if self.PrimaryConnection == nil {
-		return
-	}
-
-	self.PrimaryConnection.SetKeepaliveInterval(interval)
+	(*self.Connection).SetKeepaliveInterval(interval)
 }
 
-func (self *MmuxConnection) DisableClearSession() {
+func (self *MmuxConnection) DisableCleanSession() {
 }
 
-func (self *MmuxConnection) ShouldClearSession() bool {
-	self.Mutex.RLock()
-	defer self.Mutex.RUnlock()
-
-	if self.PrimaryConnection == nil {
-		return self.CleanSession
-	}
-
-	return self.PrimaryConnection.ShouldClearSession()
+func (self *MmuxConnection) ShouldCleanSession() bool {
+	return (*self.Connection).ShouldCleanSession()
 }
 
 func (self *MmuxConnection) GetHash() uint32 {

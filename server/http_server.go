@@ -69,7 +69,7 @@ func (self *HttpServer) ListenAndServe() error {
 func (self *HttpServer) Serve(l net.Listener) error {
 	log.Info("momonga_http: started http server: %s", l.Addr().String())
 
-	// アッー. Stop出来ねぇ
+	// TODO: how do I stop this?
 	go self.Server.Serve(l)
 	return nil
 }

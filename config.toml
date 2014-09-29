@@ -6,9 +6,15 @@ log_file = "stdout"
 log_level = "debug"
 pid_file = ""
 
+user = "momonga"
+
 bind_address = "localhost"
+
 port = 1883
-max_connections = 100
+
+max_connections = 1000
+
+# unix socket path (default disabled)
 socket = ""
 connection_timeout = 10
 
@@ -17,9 +23,28 @@ tls_port = 8883
 cafile = ""
 certfile = ""
 keyfile = ""
+
 httpport = 9000
+websocket_mount = "/mqtt"
+
+# provide http debug features (see server/http.go)
+http_debug = true
 
 [engine]
+enable_permission = false
 queue_size = 8192
-acceptor_count = "cpu"
 lock_pool_size = 64
+enable_sys = true
+acceptor_count = "cpu"
+fanout_worker_count = "cpu"
+
+max_inflight_messages = 10000
+max_queued_messages = 10000
+retry_interval = 20
+
+# max is 268435455 bytes
+message_size_limit = 8192
+allow_anonymous = true
+
+	[engine.authenticator]
+	type = "empty"

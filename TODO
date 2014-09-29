@@ -149,7 +149,7 @@ User Name MUST be a UTF-8 encoded string as defined in Section ‎1.5.3.
 [MQTT-3.1.4-1]
 The Server MUST validate that the CONNECT Packet conforms to section 3.1 and close the Network Connection without sending a CONNACK if it does not conform.
 
-[MQTT-3.1.4-2]
+[x][MQTT-3.1.4-2]
 If the ClientId represents a Client already connected to the Server then the Server MUST disconnect the existing Client.
 
 [MQTT-3.1.4-3]

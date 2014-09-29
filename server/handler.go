@@ -58,7 +58,7 @@ func (self *Handler) Close() {
 }
 
 func (self *Handler) Parsed() {
-	self.Engine.System.Broker.Messages.Received++
+	Metrics.System.Broker.Messages.Received.Add(1)
 }
 
 func (self *Handler) Pubcomp(messageId uint16) {
@@ -114,7 +114,7 @@ func (self *Handler) Disconnect() {
 		cn.Disconnect()
 	}
 
-	self.Engine.System.Broker.Clients.Connected--
+	Metrics.System.Broker.Clients.Connected.Add(-1)
 	//return &DisconnectError{}
 }
 
@@ -127,6 +127,9 @@ func (self *Handler) Publish(p *codec.PublishMessage) {
 	//log.Info("Received Publish Message: %s: %+v", p.PacketIdentifier, p)
 	conn := self.Connection
 
+	// TODO: check permission.
+
+	// TODO: この部分はengine側にあるべき機能なので治す（というか下のconnectionがやる所?)
 	if p.QosLevel == 1 {
 		ack := codec.NewPubackMessage()
 		ack.PacketIdentifier = p.PacketIdentifier
@@ -150,6 +153,7 @@ func (self *Handler) Publish(p *codec.PublishMessage) {
 		p.Opaque = conn
 	}
 
+	// NOTE: We don't block here. currently use goroutine but should pass message to background worker.
 	go self.Engine.SendPublishMessage(p)
 }
 

@@ -172,6 +172,16 @@ func NewConnackMessage() *ConnackMessage {
 	return message
 }
 
+func MustCopyPublishMessage(msg *PublishMessage) (*PublishMessage) {
+	v, err := CopyMessage(msg)
+	if err != nil {
+		panic("copy publish message failed")
+	}
+
+	return v.(*PublishMessage)
+}
+
+
 func CopyPublishMessage(msg *PublishMessage) (*PublishMessage, error) {
 	v, err := CopyMessage(msg)
 	if err != nil {

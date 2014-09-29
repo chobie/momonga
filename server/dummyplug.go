@@ -136,6 +136,7 @@ func (self *DummyPlug) WriteMessageQueue2(msg []byte) {
 }
 
 func (self *DummyPlug) Close() error {
+	self.Stop()
 	return nil
 }
 
@@ -145,6 +146,7 @@ func (self *DummyPlug) SetState(State) {
 func (self *DummyPlug) GetState() State {
 	return STATE_CONNECTED
 }
+
 func (self *DummyPlug) ResetState() {
 }
 
@@ -189,7 +191,6 @@ func (self *DummyPlug) RemoveSubscribedTopic(string) {
 }
 
 func (self *DummyPlug) SetKeepaliveInterval(int) {
-	panic("strange state")
 	return
 }
 
@@ -204,17 +205,10 @@ func (self *DummyPlug) SetId(id string) {
 	self.Identity = id
 }
 
-func (self *DummyPlug) DisableClearSession() {
+func (self *DummyPlug) DisableCleanSession() {
 	return
 }
 
-func (self *DummyPlug) ShouldClearSession() bool {
+func (self *DummyPlug) ShouldCleanSession() bool {
 	return false
-}
-
-func (self *DummyPlug) GetGuid() util.Guid {
-	return util.Guid(0)
-}
-
-func (self *DummyPlug) SetGuid(id util.Guid) {
 }

@@ -151,10 +151,12 @@ func (self *MyHttpServer) apiRouter(w http.ResponseWriter, req *http.Request) er
 		return nil
 	case self.WebSocketMount:
 		websocket.Handler(func(ws *websocket.Conn) {
-			// need for bynary frame
+			// need for binary frame
 			ws.PayloadType = 0x02
 
-			conn := NewMyConnection(nil)
+			myconf := GetDefaultMyConfig()
+			myconf.MaxMessageSize = self.Engine.Config().Server.MessageSizeLimit
+			conn := NewMyConnection(myconf)
 			conn.SetMyConnection(ws)
 			conn.SetId(ws.RemoteAddr().String())
 			self.Engine.HandleConnection(conn)

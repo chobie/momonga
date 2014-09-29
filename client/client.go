@@ -168,11 +168,11 @@ func (self *Client) Connect() error {
 	}
 
 	if len(self.Option.UserName) > 0 {
-		msg.UserName = self.Option.UserName
+		msg.UserName = []byte(self.Option.UserName)
 	}
 
 	if len(self.Option.Password) > 0 {
-		msg.Password = self.Option.Password
+		msg.Password = []byte(self.Option.Password)
 	}
 
 	self.Connection.SetState(STATE_CONNECTING)

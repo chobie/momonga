@@ -10,7 +10,10 @@ import (
 type TopicMatcher interface {
 	// TODO: should force []*SubscribeSet
 	Match(Topic string) []interface{}
+
 	Add(Topic string, Value interface{})
+
 	Remove(Topic string, val interface{})
+
 	Dump(writer io.Writer)
 }

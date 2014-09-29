@@ -19,8 +19,8 @@ func (s *DummyPlugSuite) TestDummyPlug(c *C) {
 	p.Switch <- true
 	mux := NewMmuxConnection()
 
-	mux.SetState(STATE_CONNECTED)
-	mux.DisableClearSession()
+	p.SetState(STATE_CONNECTED)
+	mux.DisableCleanSession()
 	mux.SetId(p.GetId())
 	mux.Attach(p)
 	// Memo: Normally, engine has correct relation ship between mux and iteself. this is only need for test

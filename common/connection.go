@@ -45,25 +45,42 @@ func (e *ConnectionResetError) Error() string {
 type Connection interface {
 	//WriteMessage(request mqtt.Message) error
 	WriteMessageQueue(request mqtt.Message)
+
 	Close() error
+
 	SetState(State)
+
 	GetState() State
+
 	ResetState()
+
 	ReadMessage() (mqtt.Message, error)
+
 	IsAlived() bool
+
 	SetWillMessage(mqtt.WillMessage)
+
 	GetWillMessage() *mqtt.WillMessage
+
 	HasWillMessage() bool
+
 	GetOutGoingTable() *util.MessageTable
+
 	GetSubscribedTopics() map[string]*SubscribeSet
+
 	AppendSubscribedTopic(string, *SubscribeSet)
+
 	RemoveSubscribedTopic(string)
+
 	SetKeepaliveInterval(int)
+
 	GetId() string
-	GetGuid() util.Guid
-	SetGuid(util.Guid)
+
 	GetRealId() string
+
 	SetId(string)
-	DisableClearSession()
-	ShouldClearSession() bool
+
+	DisableCleanSession()
+
+	ShouldCleanSession() bool
 }

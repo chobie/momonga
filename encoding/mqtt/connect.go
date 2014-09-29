@@ -21,8 +21,8 @@ type ConnectMessage struct {
 	Identifier   string       `json:"identifier"`
 	Will         *WillMessage `json:"will"`
 	CleanSession bool         `json:clean_session`
-	UserName     string       `json:"user_name"`
-	Password     string       `json:"password"`
+	UserName     []byte       `json:"user_name"`
+	Password     []byte       `json:"password"`
 }
 
 func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
@@ -91,12 +91,12 @@ func (self *ConnectMessage) WriteTo(w io.Writer) (int64, error) {
 	if int(self.Flag)&0x80 > 0 {
 		Length = uint16(len(self.UserName))
 		err = binary.Write(w, binary.BigEndian, Length)
-		w.Write([]byte(self.UserName))
+		w.Write(self.UserName)
 	}
 	if int(self.Flag)&0x40 > 0 {
 		Length = uint16(len(self.Password))
 		err = binary.Write(w, binary.BigEndian, Length)
-		w.Write([]byte(self.Password))
+		w.Write(self.Password)
 	}
 	return int64(size), nil
 }
@@ -178,7 +178,7 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 		nr := bytes.NewReader(buffer[offset:])
 		binary.Read(nr, binary.BigEndian, &Length)
 		offset += 2
-		self.UserName = string(buffer[offset : offset+int(Length)])
+		self.UserName = buffer[offset : offset+int(Length)]
 		offset += int(Length)
 	}
 
@@ -186,7 +186,7 @@ func (self *ConnectMessage) decode(reader io.Reader) error {
 		nr := bytes.NewReader(buffer[offset:])
 		offset += 2
 		binary.Read(nr, binary.BigEndian, &Length)
-		self.Password = string(buffer[offset : offset+int(Length)])
+		self.Password = buffer[offset : offset+int(Length)]
 		offset += int(Length)
 	}
 

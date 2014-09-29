@@ -8,7 +8,6 @@ import (
 	"bufio"
 	"fmt"
 	codec "github.com/chobie/momonga/encoding/mqtt"
-	"github.com/chobie/momonga/flags"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
 	"io"
@@ -45,9 +44,9 @@ type MyConnection struct {
 	Reader           *bufio.Reader
 	Writer           *bufio.Writer
 	KeepLoop         bool
-	guid             util.Guid
 	balancer         *util.Balancer
 	logger           log.Logger
+	MaxMessageSize   int
 }
 
 func (self *MyConnection) SetOpaque(opaque interface{}) {
@@ -60,6 +59,7 @@ func (self *MyConnection) GetOpaque() interface{} {
 
 type MyConfig struct {
 	QueueSize        int
+	MaxMessageSize   int
 	OfflineQueueSize int
 	Keepalive        int
 	WritePerSec      int
@@ -68,9 +68,14 @@ type MyConfig struct {
 
 var defaultConfig = MyConfig{
 	QueueSize:        8192,
+	MaxMessageSize:   8192,
 	OfflineQueueSize: 1024,
 	Keepalive:        0,
 	WritePerSec:      0,
+}
+
+func GetDefaultMyConfig() *MyConfig {
+	return &defaultConfig
 }
 
 // TODO: どっかで綺麗にしたい
@@ -94,6 +99,7 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 		Keepalive:        conf.Keepalive,
 		State:            STATE_INIT,
 		Closed:           make(chan bool),
+		MaxMessageSize:   8192,
 	}
 
 	c.logger = log.Global
@@ -105,6 +111,9 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 		c.balancer = &util.Balancer{
 			PerSec: conf.WritePerSec,
 		}
+	}
+	if conf.MaxMessageSize > 0 {
+		c.MaxMessageSize = conf.MaxMessageSize
 	}
 
 	c.Events["connected"] = func() {
@@ -531,14 +540,6 @@ func (self *MyConnection) ReadMessage() (codec.Message, error) {
 	return self.ParseMessage()
 }
 
-func (self *MyConnection) GetGuid() util.Guid {
-	return self.guid
-}
-
-func (self *MyConnection) SetGuid(id util.Guid) {
-	self.guid = id
-}
-
 func (self *MyConnection) ParseMessage() (codec.Message, error) {
 	//	self.Mutex.RLock()
 	//	defer self.Mutex.RUnlock()
@@ -552,7 +553,7 @@ func (self *MyConnection) ParseMessage() (codec.Message, error) {
 	if self.Reader == nil {
 		panic("reader is null")
 	}
-	message, err := codec.ParseMessage(self.Reader, 8192)
+	message, err := codec.ParseMessage(self.Reader, self.MaxMessageSize)
 	if err != nil {
 		self.logger.Debug(">>> Message: %s\n", err)
 		if v, ok := self.Events["error"].(func(error)); ok {
@@ -751,22 +752,18 @@ func (self *MyConnection) GetRealId() string {
 }
 
 func (self *MyConnection) GetId() string {
-	if flags.Mflags["experimental.newid"] {
-		return fmt.Sprintf("%s:%d", self.Id, self.guid)
-	} else {
-		return self.Id
-	}
+	return self.Id
 }
 
 func (self *MyConnection) SetKeepaliveInterval(interval int) {
 	self.Keepalive = interval
 }
 
-func (self *MyConnection) DisableClearSession() {
+func (self *MyConnection) DisableCleanSession() {
 	self.CleanSession = false
 }
 
-func (self *MyConnection) ShouldClearSession() bool {
+func (self *MyConnection) ShouldCleanSession() bool {
 	return self.CleanSession
 }
 

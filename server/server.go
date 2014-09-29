@@ -10,6 +10,7 @@ import (
 type Server interface {
 	ListenAndServe() error
 	//ListenAndServeTLS(certFile, keyFile string) error
+
 	Serve(l net.Listener) error
 
 	Graceful()

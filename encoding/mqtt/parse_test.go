@@ -251,8 +251,8 @@ func (s *MySuite) TestParseConnectMessage(c *C) {
 	msg := NewConnectMessage()
 	msg.Magic = []byte("MQTT")
 	msg.Version = uint8(4)
-	msg.UserName = "hoge"
-	msg.Password = "huga"
+	msg.UserName = []byte("hoge")
+	msg.Password = []byte("huga")
 	msg.Identifier = "debug"
 	msg.CleanSession = true
 	msg.KeepAlive = uint16(10)
@@ -272,8 +272,8 @@ func (s *MySuite) BenchmarkParseConnectMessage(c *C) {
 	msg := NewConnectMessage()
 	msg.Magic = []byte("MQTT")
 	msg.Version = uint8(4)
-	msg.UserName = "hoge"
-	msg.Password = "huga"
+	msg.UserName = []byte("hoge")
+	msg.Password = []byte("huga")
 	msg.Identifier = "debug"
 	msg.CleanSession = true
 	msg.KeepAlive = uint16(10)

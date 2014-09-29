@@ -13,56 +13,79 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/tls"
 )
 
-type UnixServer struct {
-	Engine   *Momonga
-	Address  string
-	stop     chan bool
-	listener Listener
-	inherit  bool
-	wg       *sync.WaitGroup
-	once     sync.Once
+type TlsServer struct {
+	ListenAddress string
+	Engine        *Momonga
+	config        *configuration.Config
+	stop          chan bool
+	listener      Listener
+	inherit       bool
+	wg            *sync.WaitGroup
+	once          sync.Once
+	tlsConfig      *tls.Config
 }
 
-func NewUnixServer(engine *Momonga, config *configuration.Config, inherit bool) *UnixServer {
-	t := &UnixServer{
-		Engine:  engine,
-		Address: config.GetSocketAddress(),
-		stop:    make(chan bool, 1),
-		inherit: inherit,
+func NewTlsServer(engine *Momonga, config *configuration.Config, inherit bool) *TlsServer {
+	t := &TlsServer{
+		Engine:        engine,
+		ListenAddress: config.GetTlsListenAddress(),
+		config:        config,
+		stop:          make(chan bool, 1),
+		inherit:       inherit,
 	}
 
 	return t
 }
 
-func (self *UnixServer) ListenAndServe() error {
+func (self *TlsServer) ListenAndServe() error {
 	if self.inherit {
-		file := os.NewFile(uintptr(4), "sock")
+		file := os.NewFile(uintptr(3), "sock")
 		tmp, err := net.FileListener(file)
 		file.Close()
 		if err != nil {
-			log.Error("UnixServer: %s", err)
+			log.Error("Error: %s", err)
 			return nil
 		}
 
-		listener := tmp.(*net.TCPListener)
+		cert, err := tls.LoadX509KeyPair(self.config.Server.Certfile, self.config.Server.Keyfile)
+		if err != nil {
+			panic(fmt.Sprintf("LoadX509KeyPair error: %s", err))
+		}
+
+		config := &tls.Config{Certificates: []tls.Certificate{cert}}
+		self.tlsConfig = config
+		// TODO: IS THIS CORRECT?
+		listener := tmp.(net.Listener)
 		self.listener = &MyListener{Listener: listener}
 	} else {
-		listener, err := net.Listen("unix", self.Address)
+		cert, err := tls.LoadX509KeyPair(self.config.Server.Certfile, self.config.Server.Keyfile)
+		if err != nil {
+			panic(fmt.Sprintf("LoadX509KeyPair error: %s", err))
+		}
+
+		config := &tls.Config{Certificates: []tls.Certificate{cert}}
+		listener, err := tls.Listen("tcp", self.ListenAddress, config)
+		self.tlsConfig = config
 
 		if err != nil {
 			panic(fmt.Sprintf("Error: %s", err))
-			return err
 		}
+
 		self.listener = &MyListener{Listener: listener}
 	}
-	go self.Serve(self.listener)
+
+	log.Info("momonga_tls: started tls server: %s", self.listener.Addr().String())
+	for i := 0; i < self.config.GetAcceptorCount(); i++ {
+		go self.Serve(self.listener)
+	}
+
 	return nil
 }
 
-func (self *UnixServer) Serve(l net.Listener) error {
-	log.Info("momonga_unix: started server")
+func (self *TlsServer) Serve(l net.Listener) error {
 	defer func() {
 		l.Close()
 	}()
@@ -77,6 +100,11 @@ Accept:
 		default:
 			client, err := l.Accept()
 			if err != nil {
+				if v, ok := client.(*net.TCPConn); ok {
+					v.SetNoDelay(true)
+					v.SetKeepAlive(true)
+				}
+
 				if ne, ok := err.(net.Error); ok && ne.Temporary() {
 					if tempDelay == 0 {
 						tempDelay = 5 * time.Millisecond
@@ -92,11 +120,13 @@ Accept:
 					time.Sleep(tempDelay)
 					continue
 				}
+
 				if strings.Contains(err.Error(), "use of closed network connection") {
 					log.Error("Accept Failed: %s", err)
 					continue
 				}
 
+				log.Error("Accept Error: %s", err)
 				return err
 			}
 			tempDelay = 0
@@ -119,17 +149,19 @@ Accept:
 	return nil
 }
 
-func (self *UnixServer) Stop() {
+func (self *TlsServer) Stop() {
 	close(self.stop)
 	self.listener.Close()
 }
 
-func (self *UnixServer) Graceful() {
+func (self *TlsServer) Graceful() {
 	log.Info("stop new accepting")
 	close(self.stop)
 	self.listener.Close()
+
 }
 
-func (self *UnixServer) Listener() Listener {
+func (self *TlsServer) Listener() Listener {
+	log.Info("LIS: %#v\n", self.listener)
 	return self.listener
 }

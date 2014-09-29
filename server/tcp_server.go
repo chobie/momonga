@@ -116,7 +116,10 @@ Accept:
 			}
 			tempDelay = 0
 
-			conn := NewMyConnection(nil)
+
+			myconf := GetDefaultMyConfig()
+			myconf.MaxMessageSize = self.Engine.Config().Server.MessageSizeLimit
+			conn := NewMyConnection(myconf)
 			conn.SetMyConnection(client)
 			conn.SetId(client.RemoteAddr().String())
 

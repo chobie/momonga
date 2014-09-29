@@ -5,7 +5,7 @@ Momonga MQTT
 
 # About
 
-Momonga is a Golang MQTT library
+Momonga is a Golang MQTT library to make MQTT client and Server easily.
 
 This project has been started as my hobby project, to learn MQTT3.1.1 behaviour.
 This might contains some unreliable codes. Yes, contributions are very welcome.

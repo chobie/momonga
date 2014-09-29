@@ -8,6 +8,7 @@ import (
 	myexpvar "github.com/chobie/momonga/expvar"
 	"github.com/cloudfoundry/gosigar"
 	"github.com/influxdb/influxdb/client"
+	"github.com/chobie/momonga/util"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -95,25 +96,6 @@ func cb(kv expvar.KeyValue) {
 	}
 }
 
-func getInt(i *expvar.Int) int64 {
-	v := i.String()
-	vv, e := strconv.ParseInt(v, 10, 64)
-	if e != nil {
-		return 0
-	}
-
-	return vv
-}
-
-func getFloat(f *expvar.Float) float64 {
-	a, e := strconv.ParseFloat(f.String(), 64)
-	if e != nil {
-		return 0
-	}
-
-	return a
-}
-
 func init() {
 	result = make(map[string]interface{})
 
@@ -131,9 +113,9 @@ func init() {
 			Metrics.NumCgoCall.Set(int64(runtime.NumGoroutine()))
 			Metrics.Uptime.Set(time.Now().Unix())
 
-			Metrics.MessageSentPerSec.Set(getInt(Metrics.System.Broker.Messages.Sent))
-			if getInt(Metrics.System.Broker.Clients.Connected) > 0 {
-				Metrics.GoroutinePerConn.Set(float64(getInt(Metrics.NumGoroutine) / getInt(Metrics.System.Broker.Clients.Connected)))
+			Metrics.MessageSentPerSec.Set(util.GetIntValue(Metrics.System.Broker.Messages.Sent))
+			if util.GetIntValue(Metrics.System.Broker.Clients.Connected) > 0 {
+				Metrics.GoroutinePerConn.Set(float64(util.GetIntValue(Metrics.NumGoroutine) / util.GetIntValue(Metrics.System.Broker.Clients.Connected)))
 			}
 
 			mem := sigar.Mem{}
