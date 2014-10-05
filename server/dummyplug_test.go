@@ -43,14 +43,14 @@ func (s *DummyPlugSuite) TestDummyPlug(c *C) {
 	pub.TopicName = "/debug/1"
 	pub.Payload = []byte("hello")
 	pub.QosLevel = 1
-	engine.SendPublishMessage(pub)
+	engine.SendPublishMessage(pub, "dummy", false)
 
 	pub = mqtt.NewPublishMessage()
 	pub.TopicName = "/debug/2"
 	pub.Payload = []byte("hello")
 	pub.QosLevel = 2
 
-	engine.SendPublishMessage(pub)
+	engine.SendPublishMessage(pub, "dummy", false)
 
 	// TODO: How do i test this?
 }

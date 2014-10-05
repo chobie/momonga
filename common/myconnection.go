@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const defaultBufferSize = 16 * 1024
+const defaultBufferSize = 32768
 
 type MyConnection struct {
 	MyConnection     io.ReadWriteCloser
@@ -47,6 +47,9 @@ type MyConnection struct {
 	balancer         *util.Balancer
 	logger           log.Logger
 	MaxMessageSize   int
+	fch chan bool
+	t                *time.Timer
+	Bridged          bool
 }
 
 func (self *MyConnection) SetOpaque(opaque interface{}) {
@@ -99,8 +102,16 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 		Keepalive:        conf.Keepalive,
 		State:            STATE_INIT,
 		Closed:           make(chan bool),
-		MaxMessageSize:   8192,
+		MaxMessageSize:   conf.MaxMessageSize,
+		fch: make(chan bool, 1),
 	}
+
+	c.t = time.AfterFunc(time.Second * 300, func() {
+		// NOTE: assume flush
+		if c.State == STATE_CONNECTED {
+			c.kickFlusher()
+		}
+	})
 
 	c.logger = log.Global
 	if conf.Logger != nil {
@@ -256,7 +267,8 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 		for {
 			select {
 			case msg := <-c.Queue:
-				if c.GetState() == STATE_CONNECTED || c.GetState() == STATE_CONNECTING {
+				state := c.GetState()
+				if state == STATE_CONNECTED || state == STATE_CONNECTING {
 					if msg.GetType() == codec.PACKET_TYPE_PUBLISH {
 						sb := msg.(*codec.PublishMessage)
 						if sb.QosLevel < 0 {
@@ -281,7 +293,6 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 				} else {
 					c.OfflineQueue = append(c.OfflineQueue, msg)
 				}
-
 			case <-c.Closed:
 				if c.KeepLoop {
 					time.Sleep(time.Second)
@@ -291,13 +302,42 @@ func NewMyConnection(conf *MyConfig) *MyConnection {
 			}
 		}
 	}()
-
+	go c.flusher()
 	return c
 }
 
+func (self *MyConnection) flusher() {
+	for {
+		if _, ok := <-self.fch; !ok {
+			return
+		}
+		self.Mutex.Lock()
+
+		if self.State == STATE_CLOSED  {
+			self.Mutex.Unlock()
+			return
+		}
+
+		if self.Writer == nil {
+			self.Mutex.Unlock()
+			return
+		}
+
+		b := self.Writer.Buffered()
+		if b > 0 {
+			e := self.Writer.Flush()
+			if e != nil {
+				fmt.Printf("e: %s", e)
+			}
+		}
+		self.Mutex.Unlock()
+	}
+}
+
+
 func (self *MyConnection) SetMyConnection(c io.ReadWriteCloser) {
 	self.Mutex.Lock()
-	defer self.Mutex.Unlock()
+
 	if self.MyConnection != nil {
 		self.Reconnect = true
 	}
@@ -306,6 +346,8 @@ func (self *MyConnection) SetMyConnection(c io.ReadWriteCloser) {
 	self.Writer = bufio.NewWriterSize(self.MyConnection, defaultBufferSize)
 	self.Reader = bufio.NewReaderSize(self.MyConnection, defaultBufferSize)
 	self.State = STATE_CONNECTED
+
+	self.Mutex.Unlock()
 }
 
 func (self *MyConnection) Subscribe(topic string, QoS int) error {
@@ -325,7 +367,14 @@ func (self *MyConnection) Subscribe(topic string, QoS int) error {
 			cb(sb, self)
 		}
 	}
-	self.Queue <- sb
+
+
+	state := self.GetState()
+	if state == STATE_CONNECTED || state == STATE_CONNECTING {
+		self.writeMessage(sb)
+	} else {
+		self.OfflineQueue = append([]codec.Message{sb}, self.OfflineQueue...)
+	}
 	return nil
 }
 
@@ -516,17 +565,47 @@ func (self *MyConnection) On(event string, callback interface{}, args ...bool) e
 	return nil
 }
 
+func (self *MyConnection) kickFlusher() {
+	select {
+	case self.fch <- true:
+	default:
+		self.t.Reset(time.Millisecond * 300)
+	}
+}
+
 func (self *MyConnection) Publish(TopicName string, Payload []byte, QosLevel int, retain bool, opaque interface{}) {
 	sb := codec.NewPublishMessage()
 	sb.TopicName = TopicName
 	sb.Payload = Payload
 	sb.QosLevel = QosLevel
 
-	if retain {
-		sb.Retain = 1
-	}
+	state := self.GetState()
+	if state == STATE_CONNECTED || state == STATE_CONNECTING {
+		if retain {
+			sb.Retain = 1
+		}
 
-	self.Queue <- sb
+		if sb.QosLevel < 0 {
+			self.logger.Error("QoS under zero. %s: %#v", self.Id, sb)
+			return
+		}
+
+		if sb.QosLevel > 0 {
+			id := self.InflightTable.NewId()
+			sb.PacketIdentifier = id
+			self.InflightTable.Register(id, sb, nil)
+		}
+
+		e := self.writeMessage(sb)
+		if e != nil {
+			if v, ok := self.Events["error"].(func(error)); ok {
+				v(e)
+			}
+		}
+		self.invalidateTimer()
+	} else {
+		self.OfflineQueue = append(self.OfflineQueue, sb)
+	}
 }
 
 func (self *MyConnection) HasMyConnection() bool {
@@ -553,6 +632,7 @@ func (self *MyConnection) ParseMessage() (codec.Message, error) {
 	if self.Reader == nil {
 		panic("reader is null")
 	}
+
 	message, err := codec.ParseMessage(self.Reader, self.MaxMessageSize)
 	if err != nil {
 		self.logger.Debug(">>> Message: %s\n", err)
@@ -710,9 +790,17 @@ func (self *MyConnection) Write(b []byte) (int, error) {
 	return self.Writer.Write(b)
 }
 
+func (self *MyConnection) Terminate() {
+	// 帳尻合わせ
+	close(self.fch)
+}
+
 func (self *MyConnection) Close() error {
 	self.State = STATE_CLOSED
 	self.Closed <- true
+	self.t.Stop()
+	// どうしよっかなー、これ。Clientだと使いまわされるのが悩ましい
+	//close(self.fch)
 
 	return self.MyConnection.Close()
 }
@@ -780,7 +868,6 @@ func (self *MyConnection) SetState(state State) {
 func (self *MyConnection) GetState() State {
 	self.Mutex.RLock()
 	defer self.Mutex.RUnlock()
-
 	return self.State
 }
 
@@ -835,13 +922,12 @@ func (self *MyConnection) writeMessage(msg codec.Message) error {
 	}
 
 	if e != nil {
-		self.Writer.Flush()
 		self.Mutex.Unlock()
 		return e
 	}
 
-	self.Writer.Flush()
 	self.Last = time.Now()
+	self.kickFlusher()
 	self.Mutex.Unlock()
 	return nil
 }
@@ -856,4 +942,8 @@ func (self *MyConnection) SetRequestPerSecondLimit(limit int) {
 	} else {
 		self.balancer.PerSec = limit
 	}
+}
+
+func (self *MyConnection) IsBridge() bool {
+	return self.Bridged
 }

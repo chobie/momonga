@@ -177,6 +177,7 @@ func (self *Client) Connect() error {
 
 	self.Connection.SetState(STATE_CONNECTING)
 	self.Connection.WriteMessageQueue(msg)
+	time.Sleep(time.Second)
 	self.count += 1
 	if self.count > 1 {
 		self.reconnect = true

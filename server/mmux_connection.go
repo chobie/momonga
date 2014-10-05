@@ -13,12 +13,9 @@ import (
 	"time"
 	"unsafe"
 	"sync/atomic"
-	"fmt"
 )
 
 // MQTT Multiplexer Connection
-//
-// TODO: 途中で死んだとき用のやつを追加する.もうちょい素敵な実装にしたい
 //
 // Multiplexer、というかなんだろ。EngineとConnectionとの仲介でおいとくやつ。
 // Sessionがあるのでこういうふうにしとくと楽かな、と
@@ -66,7 +63,7 @@ func (self *MmuxConnection) Attach(conn Connection) {
 		// 1.If the ClientId represents a Client already connected to the Server
 		// then the Server MUST disconnect the existing Client [MQTT-3.1.4-2].
 		(*(*Connection)(old)).Close()
-		fmt.Printf("close existing connection")
+		log.Debug("close existing connection")
 	}
 
 	self.CleanSession = conn.ShouldCleanSession()
@@ -169,11 +166,6 @@ func (self *MmuxConnection) GetOutGoingTable() *util.MessageTable {
 	defer self.Mutex.RUnlock()
 
 	return self.OutGoingTable
-	//	if self.Connection == nil {
-	//		return nil
-	//	}
-	//
-	//	return self.Connection.GetOutGoingTable()
 }
 
 func (self *MmuxConnection) GetSubscribedTopics() map[string]*SubscribeSet {
@@ -236,3 +228,12 @@ func (self *MmuxConnection) SetId(id string) {
 	self.Identifier = id
 	self.Hash = util.MurmurHash([]byte(id))
 }
+
+func (self *MmuxConnection) IsBridge() bool {
+	if self.Connection == nil {
+		return false
+	}
+
+	return (*self.Connection).IsBridge()
+}
+

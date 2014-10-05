@@ -154,7 +154,7 @@ func (self *Handler) Publish(p *codec.PublishMessage) {
 	}
 
 	// NOTE: We don't block here. currently use goroutine but should pass message to background worker.
-	go self.Engine.SendPublishMessage(p)
+	go self.Engine.SendPublishMessage(p, conn.GetId(), conn.IsBridge())
 }
 
 func (self *Handler) Subscribe(p *codec.SubscribeMessage) {

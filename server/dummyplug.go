@@ -212,3 +212,7 @@ func (self *DummyPlug) DisableCleanSession() {
 func (self *DummyPlug) ShouldCleanSession() bool {
 	return false
 }
+
+func (self *DummyPlug) IsBridge() bool {
+	return false
+}

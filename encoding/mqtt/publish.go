@@ -18,8 +18,6 @@ type PublishMessage struct {
 	PacketIdentifier uint16      `json:"identifier"`
 	Payload          []byte      `json:"payload"`
 	Opaque           interface{} `json:"-"`
-
-	Guid int64 `json:"guid"`
 }
 
 func (self *PublishMessage) decode(reader io.Reader) error {

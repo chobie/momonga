@@ -14,7 +14,6 @@ import (
 	"github.com/codegangsta/cli"
 	"net"
 	"os"
-	//	"time"
 )
 
 func setupLog(ctx *cli.Context) {
@@ -63,7 +62,9 @@ func publish(ctx *cli.Context) {
 	}
 
 	c.Connect()
+	c.WaitConnection()
 	//retain := c.Bool("r")
+
 	if ctx.Bool("s") {
 		// Read from Stdin
 		scanner := bufio.NewScanner(os.Stdin)

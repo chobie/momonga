@@ -4,6 +4,8 @@
 package server
 
 import (
+	codec "github.com/chobie/momonga/encoding/mqtt"
+	"github.com/chobie/momonga/client"
 	"github.com/chobie/momonga/configuration"
 	log "github.com/chobie/momonga/logger"
 	"github.com/chobie/momonga/util"
@@ -16,6 +18,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"fmt"
+	"net"
 )
 
 //
@@ -104,6 +108,78 @@ func NewApplication(configPath string) *Application {
 	if err != nil {
 		log.Error("Error: %s", err)
 		return app
+	}
+
+	if conf.Bridge.Address != "" {
+		//TODO: Bridgeは複数指定できる
+		//TODO: Bridgeは途中で制御できる
+		// /api/bridge/list
+		// /api/bridge/connection/stop
+		// /api/bridge/connection/status
+		// /api/bridge/connection/start
+		// /api/bridge/connection/delete
+		// /api/bridge/connection/new?address=&port=&type=both&topic[]=
+		// /api/bridge/config
+		go func() {
+			flag := 0
+			switch conf.Bridge.Type {
+			case "both":
+				flag = 3
+			case "out":
+				flag = 1
+			case "in":
+				flag = 2
+			default:
+				panic(fmt.Sprintf("%s does not support.", conf.Bridge.Type))
+			}
+
+			// in
+			addr := fmt.Sprintf("%s:%d", conf.Bridge.Address, conf.Bridge.Port)
+			c := client.NewClient(client.Option{
+				TransporterCallback: func() (net.Conn, error) {
+					conn, err := net.Dial("tcp", addr)
+					return conn, err
+				},
+				Identifier: fmt.Sprintf(conf.Bridge.ClientId),
+				Magic:      []byte("MQTT"),
+				Version:    4 | 0x80,
+				Keepalive:  0,
+			})
+
+			c.Connect()
+			c.WaitConnection()
+			if flag == 1 || flag == 3 {
+				c.Subscribe("#", 2)
+				c.SetRequestPerSecondLimit(-1)
+				c.On("publish", func(msg *codec.PublishMessage) {
+						engine.SendPublishMessage(msg, conf.Bridge.Connection, true)
+				})
+			}
+
+			//out
+			if flag == 2 || flag == 3 {
+				addr2 := fmt.Sprintf("%s:%d", conf.Server.BindAddress, conf.Server.Port)
+				c2 := client.NewClient(client.Option{
+					TransporterCallback: func() (net.Conn, error) {
+						conn, err := net.Dial("tcp", addr2)
+						return conn, err
+					},
+					Identifier: fmt.Sprintf(conf.Bridge.ClientId),
+					Magic:      []byte("MQTT"),
+					Version:    4 | 0x80,
+					Keepalive:  0,
+				})
+
+				c2.Connect()
+				c2.WaitConnection()
+				c2.Subscribe("#", 2)
+				c2.SetRequestPerSecondLimit(-1)
+				c2.On("publish", func(msg *codec.PublishMessage) {
+						c.Publish(msg.TopicName, msg.Payload, msg.QosLevel)
+					})
+			}
+			select{}
+		}()
 	}
 
 	return app

@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Server Server `toml:"server"`
 	Engine Engine `toml:"engine"`
+	Bridge Bridge `toml:"bridge"`
 }
 
 type Engine struct {
@@ -30,6 +31,16 @@ type Engine struct {
 }
 
 type Authenticator struct {
+	Type string `toml:"type"`
+}
+
+type Bridge struct {
+	Address string `toml:"address"`
+	Port int `toml:"port"`
+	CleanSession bool `toml:"clean_session"`
+	ClientId string `toml:"client_id"`
+	KeepaliveInterval int `toml:"keepalive_interval"`
+	Connection string `toml:"connection"`
 	Type string `toml:"type"`
 }
 
@@ -135,7 +146,7 @@ func DefaultConfiguration() *Config {
 			BindAddress:         "localhost",
 			Port:                1883,
 			Socket:              "",
-			HttpPort:            9000,
+			HttpPort:            0,
 			WebSocketMount:      "/mqtt",
 			HttpDebug:           true,
 			MaxInflightMessages: 10000,

@@ -83,4 +83,6 @@ type Connection interface {
 	DisableCleanSession()
 
 	ShouldCleanSession() bool
+
+	IsBridge() bool
 }

@@ -96,7 +96,7 @@ func (self *MyHttpServer) debugRouter(w http.ResponseWriter, req *http.Request) 
 			fmt.Fprintf(w, "<div>%#v</div>", v)
 		}
 	case "/debug/connections/clear":
-		self.Engine.Connections = make(map[string]*MmuxConnection)
+		self.Engine.Connections = make(map[uint32]map[string]*MmuxConnection)
 		fmt.Fprintf(w, "cleared")
 	case "/debug/qlobber/clear":
 		self.Engine.TopicMatcher = util.NewQlobber()

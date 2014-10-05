@@ -51,7 +51,7 @@ func NewMomonga(config *configuration.Config) *Momonga {
 	engine := &Momonga{
 		OutGoingTable: util.NewMessageTable(),
 		TopicMatcher:  util.NewQlobber(),
-		Connections:   map[string]*MmuxConnection{},
+		Connections:   map[uint32]map[string]*MmuxConnection{},
 		RetryMap:      map[string][]*Retryable{},
 		Started:       time.Now(),
 		EnableSys:     false,
@@ -64,6 +64,7 @@ func NewMomonga(config *configuration.Config) *Momonga {
 	// initialize lock pool
 	for i := 0; i < config.GetLockPoolSize(); i++ {
 		engine.LockPool[uint32(i)] = &sync.RWMutex{}
+		engine.Connections[uint32(i)] = make(map[string]*MmuxConnection)
 	}
 
 	auth := config.GetAuthenticators()
@@ -99,7 +100,7 @@ type Momonga struct {
 	InflightTable map[string]*util.MessageTable
 	TopicMatcher  TopicMatcher
 	// TODO: improve this.
-	Connections    map[string]*MmuxConnection
+	Connections    map[uint32]map[string]*MmuxConnection
 	RetryMap       map[string][]*Retryable
 	EnableSys      bool
 	Started        time.Time
@@ -159,7 +160,7 @@ func (self *Momonga) setupCallback() {
 		msg.Payload = []byte("0.1.0")
 		msg.Retain = 1
 
-		self.SendPublishMessage(msg)
+		self.SendPublishMessage(msg, "", false)
 	}
 }
 
@@ -176,7 +177,7 @@ func (self *Momonga) SendWillMessage(conn Connection) {
 	msg.Payload = []byte(will.Message)
 	msg.QosLevel = int(will.Qos)
 
-	self.SendPublishMessage(msg)
+	self.SendPublishMessage(msg, conn.GetId(), conn.IsBridge())
 }
 
 // TODO: wanna implement trie. but regexp works well.
@@ -284,7 +285,7 @@ func (self *Momonga) SendMessage(topic string, message []byte, qos int) {
 	msg.TopicName = topic
 	msg.Payload = message
 	msg.QosLevel = qos
-	self.SendPublishMessage(msg)
+	self.SendPublishMessage(msg, "", false)
 }
 
 func (self *Momonga) GetConnectionByClientId(clientId string) (*MmuxConnection, error) {
@@ -292,7 +293,7 @@ func (self *Momonga) GetConnectionByClientId(clientId string) (*MmuxConnection, 
 	key := hash % uint32(self.config.Engine.LockPoolSize)
 
 	self.LockPool[key].RLock()
-	if cn, ok := self.Connections[clientId]; ok {
+	if cn, ok := self.Connections[key][clientId]; ok {
 		self.LockPool[key].RUnlock()
 		return cn, nil
 	}
@@ -306,7 +307,7 @@ func (self *Momonga) SetConnectionByClientId(clientId string, conn *MmuxConnecti
 	key := hash % uint32(self.config.Engine.LockPoolSize)
 
 	self.LockPool[key].Lock()
-	self.Connections[clientId] = conn
+	self.Connections[key][clientId] = conn
 	self.LockPool[key].Unlock()
 }
 
@@ -315,11 +316,11 @@ func (self *Momonga) RemoveConnectionByClientId(clientId string) {
 	key := hash % uint32(self.config.Engine.LockPoolSize)
 
 	self.LockPool[key].Lock()
-	delete(self.Connections, clientId)
+	delete(self.Connections[key], clientId)
 	self.LockPool[key].Unlock()
 }
 
-func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
+func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage, client_id string, is_bridged bool) {
 	// Don't pass wrong message here. user should validate the message be ore using this API.
 	if len(msg.TopicName) < 1 {
 		return
@@ -510,6 +511,7 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 	// client idのほうがベターだな。Connectionを無駄に参照つけると後が辛い
 	dp := make(map[string]bool)
 	count := 0
+
 	for i := range targets {
 		var cn Connection
 		var ok error
@@ -536,6 +538,11 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 			// どちらかというとClientが悪いと思うよ！
 			// リスト拾った瞬間にはいたけど、その後いなくなったんだから配送リストからこれらは無視すべき
 			log.Info("(can't fetch %s. already disconnected, or unsubscribed?)", clientId)
+			continue
+		}
+
+		if cn.IsBridge() && clientId == client_id{
+			// Don't send message to same bridge
 			continue
 		}
 
@@ -568,6 +575,7 @@ func (self *Momonga) SendPublishMessage(msg *codec.PublishMessage) {
 		cn.WriteMessageQueue(x)
 		count++
 	}
+
 	Metrics.System.Broker.Messages.Sent.Add(int64(count))
 }
 
@@ -616,6 +624,11 @@ func (self *Momonga) Run() {
 }
 
 func (self *Momonga) checkVersion(p *codec.ConnectMessage) error {
+	if p.Version & 0x80 > 0{
+		// Bridge connection
+		return nil
+	}
+
 	if bytes.Compare(V311_MAGIC, p.Magic) == 0 {
 		if p.Version != V311_VERSION {
 			return fmt.Errorf("passed MQTT, but version is not 4")
@@ -658,6 +671,10 @@ func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *Mmu
 		conn.SetWillMessage(*p.Will)
 	}
 
+	if (p.Version & 0x80) > 0 {
+		conn.Bridged = true
+	}
+
 	if !p.CleanSession {
 		conn.DisableCleanSession()
 	}
@@ -688,22 +705,6 @@ func (self *Momonga) Handshake(p *codec.ConnectMessage, conn *MyConnection) *Mmu
 
 		if conn.ShouldCleanSession() {
 			self.CleanSubscription(mux)
-
-			if Mflags["experimental.newid"] {
-				self.SetConnectionByClientId(mux.GetId(), mux)
-				self.RemoveConnectionByClientId(mux.Identifier)
-			}
-		} else {
-			if Mflags["experimental.newid"] {
-				// idを戻してもどす。
-				for t, v := range mux.GetSubscribedTopics() {
-					self.TopicMatcher.Remove(t, v)
-					v.ClientId = mux.GetId()
-					self.TopicMatcher.Add(t, v)
-				}
-				self.SetConnectionByClientId(mux.GetId(), mux)
-				self.RemoveConnectionByClientId(mux.Identifier)
-			}
 		}
 		mux.Attach(conn)
 	} else {
@@ -826,6 +827,9 @@ func (self *Momonga) HandleConnection(conn Connection) {
 				mux.Detach(conn, dummy)
 			}
 
+			if v, ok := conn.(*MyConnection); ok {
+				v.Terminate()
+			}
 			conn.Close()
 			hndr.Close()
 			return
@@ -839,19 +843,23 @@ func (self *Momonga) Config() *configuration.Config {
 
 func (self *Momonga) Terminate() {
 	for _, v := range self.Connections {
-		v.Close()
+		for _, x := range v {
+			x.Close()
+		}
 	}
 }
 
 func (self *Momonga) Doom() {
-	for _, v := range self.Connections {
-		wait := 5 + rand.Intn(30)
-		log.Info("DOOM in %d seconds: %s\n", wait, v.GetId())
-		go func(x *MmuxConnection, wait int) {
-			time.AfterFunc(time.Second*time.Duration(wait), func() {
-				x.Close()
-			})
-		}(v, wait)
+	for _, x := range self.Connections {
+		for _, v := range x {
+			wait := 5 + rand.Intn(30)
+			log.Info("DOOM in %d seconds: %s\n", wait, v.GetId())
+			go func(x *MmuxConnection, wait int) {
+				time.AfterFunc(time.Second*time.Duration(wait), func() {
+						x.Close()
+					})
+			}(v, wait)
+		}
 	}
 	time.AfterFunc(time.Second*60, func() {
 		log.Info("Force Exit")
