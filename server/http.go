@@ -150,17 +150,54 @@ func (self *MyHttpServer) apiRouter(w http.ResponseWriter, req *http.Request) er
 	case "/stats":
 		return nil
 	case self.WebSocketMount:
-		websocket.Handler(func(ws *websocket.Conn) {
-			// need for binary frame
-			ws.PayloadType = 0x02
+		s := websocket.Server{
+			Handler: websocket.Handler(func(ws *websocket.Conn) {
+				// need for binary frame
+				ws.PayloadType = 0x02
 
-			myconf := GetDefaultMyConfig()
-			myconf.MaxMessageSize = self.Engine.Config().Server.MessageSizeLimit
-			conn := NewMyConnection(myconf)
-			conn.SetMyConnection(ws)
-			conn.SetId(ws.RemoteAddr().String())
-			self.Engine.HandleConnection(conn)
-		}).ServeHTTP(w, req)
+				myconf := GetDefaultMyConfig()
+				myconf.MaxMessageSize = self.Engine.Config().Server.MessageSizeLimit
+				conn := NewMyConnection(myconf)
+				conn.SetMyConnection(ws)
+				conn.SetId(ws.RemoteAddr().String())
+				self.Engine.HandleConnection(conn)
+			}),
+			Handshake: func (config *websocket.Config, req *http.Request) (err error) {
+				config.Origin, err = websocket.Origin(config, req)
+				if err == nil && config.Origin == nil {
+					return fmt.Errorf("null origin")
+				}
+
+				if len(config.Protocol) > 1 {
+					config.Protocol = []string{"mqttv3.1"}
+				}
+
+				// これどっしよっかなー。もうちょっと楽に選択させたい
+				v := 0
+				for i := 0; i < len(config.Protocol); i++ {
+					switch config.Protocol[i] {
+					case "mqtt":
+						if v == 0 {
+							v = 1
+						}
+					case "mqttv3.1":
+						v = 2
+					default:
+						return fmt.Errorf("unsupported protocol")
+					}
+				}
+
+				switch v {
+				case 1:
+					config.Protocol = []string{"mqtt"}
+				case 2:
+					config.Protocol = []string{"mqttv3.1"}
+				}
+
+				return err
+			},
+		}
+		s.ServeHTTP(w, req)
 	default:
 		return fmt.Errorf("404 %s", req.URL.Path)
 	}

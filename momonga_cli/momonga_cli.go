@@ -90,6 +90,7 @@ func subscribe(ctx *cli.Context) {
 	}
 
 	c.Connect()
+	c.WaitConnection()
 	c.On("publish", func(message *codec.PublishMessage) {
 		fmt.Printf("%s\t%s\n", message.TopicName, message.Payload)
 	})
